@@ -12,7 +12,7 @@ Full calibration (first time, or after the camera moves relative to the projecto
 Bench-only (the tripod got bumped but camera and projector moved together):
   python3 calibration/projector_calibrate.py --config config/bench.yaml --bench-only
 
-Steps: projector goes black -> camera finds the printed bench markers ->
+Steps: projector goes white -> camera finds the printed bench markers ->
 projector shows a marker grid -> camera finds it -> both mappings combined and
 sent to the render node, which then shows a check pattern (crosses should land
 on the printed markers).
@@ -87,9 +87,10 @@ def main():
     else:
         print("no lens calibration found; continuing without it (run lens_calibrate.py for better accuracy)")
 
-    # 1. Printed bench markers, with the projector dark so they're lit only by room light.
-    print("1/3 projector black, looking for the printed bench markers...")
-    post_json(f"{render_url}/pattern", {"kind": "black"})
+    # 1. Printed bench markers, lit by a plain white projection so they show up
+    #    even with the room lights off.
+    print("1/3 projector white, looking for the printed bench markers...")
+    post_json(f"{render_url}/pattern", {"kind": "white"})
     img = capture("bench")
     intr = scale_intrinsics(intrinsics, img.shape[1], img.shape[0])
     try:

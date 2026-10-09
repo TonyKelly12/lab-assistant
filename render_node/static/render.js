@@ -21,6 +21,23 @@ function matrix3d(H) {
   ].join(",")})`;
 }
 
+function project(H, x, y) {
+  const w = H[2][0] * x + H[2][1] * y + H[2][2];
+  return [(H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w];
+}
+
+// Projector px per bench mm, worst case over the area, times a 1.5 margin.
+// Capped at 4 to keep the browser's layer size reasonable on a Pi.
+function rasterScale(H, area) {
+  const [ax0, ay0, ax1, ay1] = area;
+  let most = 0;
+  for (const [x, y] of [[ax0, ay0], [ax1, ay0], [ax1, ay1], [ax0, ay1], [(ax0 + ax1) / 2, (ay0 + ay1) / 2]]) {
+    const p = project(H, x, y), px = project(H, x + 1, y), py = project(H, x, y + 1);
+    most = Math.max(most, Math.hypot(px[0] - p[0], px[1] - p[1]), Math.hypot(py[0] - p[0], py[1] - p[1]));
+  }
+  return Math.min(4, Math.max(1, Math.ceil(most * 1.5)));
+}
+
 function el(tag, attrs, parent) {
   const node = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -103,30 +120,34 @@ function showScene(state) {
   benchEl.style.display = "block";
   benchEl.innerHTML = "";
   const cal = state.calibration;
-  let x0, y0, W, D;
+  let x0, y0, W, D, k;
   if (cal) {
     const [ax0, ay0, ax1, ay1] = cal.area_mm;
     [x0, y0, W, D] = [ax0, ay0, ax1 - ax0, ay1 - ay0];
-    // The svg's local px (u, v) are bench mm shifted by the area origin: H @ translate(x0, y0).
     const H = cal.H_bench_to_proj;
-    const Hs = H.map(r => [r[0], r[1], r[0] * x0 + r[1] * y0 + r[2]]);
+    // The browser rasterises the svg at its CSS size before warping it, so lay it
+    // out at k px per mm, a bit above the projector's own density; at 1 px per mm
+    // a 2.54 mm hole grid smears into lines.
+    k = rasterScale(H, cal.area_mm);
+    // Local px (u, v) -> bench mm (x0 + u/k, y0 + v/k) -> projector px: H @ T(x0, y0) @ S(1/k).
+    const Hs = H.map(r => [r[0] / k, r[1] / k, r[0] * x0 + r[1] * y0 + r[2]]);
     benchEl.style.transform = matrix3d(Hs);
     statusEl.style.display = "none";
   } else {
     // Not calibrated: fit a 1000 x 600 mm area into the screen so test scenes still show.
     [x0, y0, W, D] = [0, 0, 1000, 600];
     const [pw, ph] = state.projector_size;
-    const s = Math.min(pw / W, ph / D) * 0.9;
-    benchEl.style.transform = `translate(${(pw - W * s) / 2}px, ${(ph - D * s) / 2}px) scale(${s})`;
+    k = Math.min(pw / W, ph / D) * 0.9;
+    benchEl.style.transform = `translate(${(pw - W * k) / 2}px, ${(ph - D * k) / 2}px)`;
     statusEl.textContent = "not calibrated: run calibration/projector_calibrate.py";
     statusEl.style.display = "block";
     el("rect", { x: 0, y: 0, width: W, height: D, fill: "none", stroke: "#333", "stroke-width": 2 }, benchEl);
   }
-  benchEl.setAttribute("width", W);
-  benchEl.setAttribute("height", D);
+  benchEl.setAttribute("width", W * k);
+  benchEl.setAttribute("height", D * k);
   benchEl.setAttribute("viewBox", `${x0} ${y0} ${W} ${D}`);
-  benchEl.style.width = W + "px";
-  benchEl.style.height = D + "px";
+  benchEl.style.width = W * k + "px";
+  benchEl.style.height = D * k + "px";
   for (const item of (state.scene && state.scene.items) || []) {
     const draw = DRAW[item.type];
     if (draw) {

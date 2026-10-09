@@ -114,7 +114,7 @@ Dim the room light, clear the bench as much as you can, then:
 python3 calibration/projector_calibrate.py --config config/bench.yaml
 ```
 
-It blanks the projector to find the printed markers, projects a marker grid,
+It lights the bench white to find the printed markers, projects a marker grid,
 works out the mapping, and sends it to the render node. Yellow crosses should
 land on the printed markers. If something fails, add `--save-images` and look
 at `calibration/capture-*.jpg`.
