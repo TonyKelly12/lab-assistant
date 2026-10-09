@@ -1,0 +1,31 @@
+# Camera node (Pi 4 #1). Copy to config/camera-node.yaml and edit.
+node_name: bench-cam
+
+http:
+  host: 0.0.0.0
+  port: 8080
+
+# Optional. Leave enabled: false until Mosquitto is running on the Orin.
+mqtt:
+  enabled: false
+  host: orin.local
+  port: 1883
+  username: lab
+  password: change-me
+
+cameras:
+  bench-overhead:
+    type: picamera          # ribbon-cable camera
+    index: 0
+    # main_size: [2592, 1944]  # default: sensor full resolution
+    lores_size: [640, 480]
+    track: true             # markers + motion on the low-res stream
+    track_hz: 5
+    motion_fraction: 0.005  # share of pixels that must change to count as motion
+    idle_after_s: 10
+
+  bench-microscope:
+    type: usb               # TOMLOV in PC camera mode
+    device: /dev/video0     # check with: v4l2-ctl --list-devices
+    size: [1920, 1080]      # largest size from: v4l2-ctl -d /dev/video0 --list-formats-ext
+    track: false            # snapshots on request only

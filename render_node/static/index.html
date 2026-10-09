@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Lab projector</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; width: 100vw; height: 100vh; cursor: none; }
+  #pattern { position: absolute; left: 0; top: 0; display: none; }
+  #pattern img { display: block; image-rendering: pixelated; }
+  #bench { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; }
+  #status { position: absolute; left: 24px; bottom: 16px; color: #555; font: 14px monospace; }
+  text { font-family: "DejaVu Sans", Arial, sans-serif; }
+</style>
+</head>
+<body>
+  <div id="pattern"></div>
+  <svg id="bench" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="status">connecting…</div>
+  <script src="/static/render.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# Render node (Pi 4 #2, drives the Mooka). Copy to config/render-node.yaml and edit.
+node_name: bench-render
+surface: bench
+projector_size: [1920, 1080]           # set the Pi's HDMI output to exactly this
+calibration_file: calibration/bench.json
+
+http:
+  host: 0.0.0.0
+  port: 8090
+
+mqtt:
+  enabled: false
+  host: orin.local
+  port: 1883
+  username: lab
+  password: change-me

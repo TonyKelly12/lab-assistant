@@ -1,0 +1,18 @@
+# Install:  sudo cp systemd/render-node.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now render-node
+# Edit User and WorkingDirectory if your username or clone path differ.
+# The browser itself is started from the desktop session (see README).
+[Unit]
+Description=Lab assistant render node (projector server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=blackjack
+WorkingDirectory=/home/blackjack/lab-assistant
+ExecStart=/usr/bin/python3 -m render_node.server --config config/render-node.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

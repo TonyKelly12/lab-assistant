@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+# Per-machine settings and calibration results stay local.
+config/*.yaml
+!config/*.example.yaml
+calibration/*.json
+calibration/lens-photos/
+calibration/capture-*.jpg
+prints/

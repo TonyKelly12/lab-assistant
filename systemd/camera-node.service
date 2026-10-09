@@ -1,0 +1,17 @@
+# Install:  sudo cp systemd/camera-node.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now camera-node
+# Edit User and WorkingDirectory if your username or clone path differ.
+[Unit]
+Description=Lab assistant camera node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=blackjack
+WorkingDirectory=/home/blackjack/lab-assistant
+ExecStart=/usr/bin/python3 -m camera_node.service --config config/camera-node.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

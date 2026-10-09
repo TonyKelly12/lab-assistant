@@ -1,0 +1,20 @@
+# Calibration settings for the bench surface. Copy to config/bench.yaml and edit.
+# Used by calibration/projector_calibrate.py (run it from any machine on the network).
+surface: bench
+camera_url: http://bench-cam.local:8080
+camera: bench-overhead
+render_url: http://bench-render.local:8090
+projector_size: [1920, 1080]
+intrinsics: calibration/intrinsics-bench-overhead.json   # from lens_calibrate.py (optional)
+output: calibration/bench.json
+margin_mm: 60     # drawable area extends this far past the markers
+
+# Centres of the four printed markers, in millimetres.
+# Marker 0 is the origin (back-left). x runs to the right, y toward you.
+# Tape them at the corners of the area you want to project on, then measure
+# from marker 0's centre to each other marker's centre.
+bench_markers:
+  0: [0, 0]       # back left
+  1: [900, 0]     # back right
+  2: [900, 450]   # front right
+  3: [0, 450]     # front left
