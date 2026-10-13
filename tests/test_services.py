@@ -44,6 +44,11 @@ def test_render_node_flow():
         client.post("/pattern", data=png.tobytes(), content_type="image/png")
         assert state.pattern["kind"] == "image"
         assert client.get(state.pattern["url"]).status_code == 200
+        from labassist.calib import focus_pattern
+        chart = focus_pattern(1920, 1080)
+        assert chart.shape == (1080, 1920) and chart.max() == 255
+        ok, png = cv2.imencode(".png", chart)
+        assert client.post("/pattern", data=png.tobytes(), content_type="image/png").get_json()["ok"]
         cal = {"H_bench_to_proj": np.eye(3).tolist(), "area_mm": [-60, -60, 960, 510]}
         assert client.post("/calibration", json=cal).get_json()["ok"]
         assert os.path.exists(os.path.join(d, "bench.json"))

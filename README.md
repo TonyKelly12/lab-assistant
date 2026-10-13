@@ -108,7 +108,20 @@ under 1 px. Saves `calibration/intrinsics-bench-overhead.json`, which
 
 ## 6. Projector calibration
 
-Dim the room light, clear the bench as much as you can, then:
+First focus the projector. Put up the focus chart, turn the Mooka's focus ring
+until the star in the middle (and the 1-px line patches beside it) are crisp
+where you work, check the corners, then clear it:
+
+```bash
+python3 tools/send_scene.py --render-url http://<render-pi>:8090 focus
+python3 tools/send_scene.py --render-url http://<render-pi>:8090 clear
+```
+
+Don't touch the focus ring after calibrating: refocusing shifts and resizes the
+image slightly, so it means a full re-calibration. A strip of tape over the
+ring helps.
+
+Then dim the room light, clear the bench as much as you can, and run:
 
 ```bash
 python3 calibration/projector_calibrate.py --config config/bench.yaml

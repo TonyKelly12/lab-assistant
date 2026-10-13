@@ -5,7 +5,8 @@
   python3 tools/send_scene.py --render-url ... text 100 60 "Hello bench"
   python3 tools/send_scene.py --render-url ... file my-scene.json
   python3 tools/send_scene.py --render-url ... clear
-Add --append to keep what's already shown.
+  python3 tools/send_scene.py --render-url ... focus                 # full-screen focus chart
+Add --append to keep what's already shown. `clear` also ends the focus chart.
 """
 import argparse
 import json
@@ -13,17 +14,25 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from labassist.net import post_json  # noqa: E402
+from labassist.net import post_json, post_png  # noqa: E402
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--render-url", required=True)
     p.add_argument("--append", action="store_true")
-    p.add_argument("what", choices=["rect", "holes", "text", "file", "clear"])
+    p.add_argument("--size", default="1920x1080", help="projector resolution, for the focus chart")
+    p.add_argument("what", choices=["rect", "holes", "text", "file", "clear", "focus"])
     p.add_argument("args", nargs="*")
     a = p.parse_args()
 
+    url = a.render_url.rstrip("/")
+    if a.what == "focus":
+        from labassist.calib import focus_pattern
+        w, h = (int(v) for v in a.size.lower().split("x"))
+        print(post_png(f"{url}/pattern", focus_pattern(w, h)))
+        print("Focus chart up. Adjust the focus ring, then run `clear` to go back.")
+        return
     if a.what == "clear":
         items = []
     elif a.what == "rect":
@@ -41,7 +50,7 @@ def main():
         with open(a.args[0]) as f:
             items = json.load(f).get("items", [])
 
-    print(post_json(f"{a.render_url.rstrip('/')}/scene", {"items": items, "append": a.append}))
+    print(post_json(f"{url}/scene", {"items": items, "append": a.append}))
 
 
 if __name__ == "__main__":
