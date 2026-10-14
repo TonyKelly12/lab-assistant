@@ -114,6 +114,21 @@ def create_app(cameras):
             abort(404, f"no camera named {name}")
         return cam
 
+    @app.get("/")
+    def index():
+        rows = "".join(
+            f'<li><b>{n}</b> ({c.cfg.get("type")}): '
+            f'<a href="/snapshot/{n}.jpg">full photo</a> &middot; '
+            f'<a href="/snapshot/{n}.jpg?max_width=1280">smaller photo</a> &middot; '
+            f'<a href="/markers/{n}">markers</a>'
+            + (f' &middot; <a href="/motion/{n}">motion</a>' if c.track else "")
+            + "</li>"
+            for n, c in cameras.items())
+        return ("<!doctype html><meta name=viewport content='width=device-width'>"
+                "<title>Camera node</title><body style='font-family:sans-serif;padding:16px'>"
+                f"<h2>Camera node</h2><ul>{rows}</ul>"
+                "<p><a href='/health'>health</a> &middot; <a href='/cameras'>cameras (JSON)</a></p>")
+
     @app.get("/health")
     def health():
         return jsonify(ok=True, cameras=list(cameras))

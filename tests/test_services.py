@@ -22,6 +22,9 @@ def test_camera_node_snapshot_and_markers():
     cam = Camera("test", {"type": "fake", "image": f.name, "track": False}, Bus(None, "t"))
     client = camera_app({"test": cam}).test_client()
 
+    home = client.get("/")
+    assert home.status_code == 200 and b"/snapshot/test.jpg" in home.data
+
     r = client.get("/snapshot/test.jpg?max_width=1000")
     assert r.status_code == 200 and r.mimetype == "image/jpeg"
     decoded = cv2.imdecode(np.frombuffer(r.data, np.uint8), cv2.IMREAD_COLOR)
