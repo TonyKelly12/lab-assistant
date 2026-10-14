@@ -7,3 +7,4 @@ calibration/*.json
 calibration/lens-photos/
 calibration/capture-*.jpg
 prints/
+diagnose-bench.png
