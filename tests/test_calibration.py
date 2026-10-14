@@ -73,6 +73,27 @@ def test_end_to_end():
     assert err.max() < 2.0, err.max()
 
 
+def test_reduced_scale_detection_keeps_accuracy():
+    """OpenCV 4.6 (Pi OS Bookworm) only finds markers in big frames at reduced
+    scale. Force that path and check calibration stays accurate."""
+    original = aruco.detect
+    try:
+        for scales in ((0.5,), (0.25,)):
+            calib.aruco.detect = lambda img, s=scales: original(img, scales=s)
+            H_bench_to_cam_true, H_proj_to_cam_true = truth()
+            H_true = np.linalg.inv(H_proj_to_cam_true) @ H_bench_to_cam_true
+            H_bc, _ = calib.solve_bench_to_cam(bench_image(H_bench_to_cam_true), BENCH)
+            pattern, layout = calib.projector_pattern(PROJ_W, PROJ_H)
+            H_cp, rep = calib.solve_cam_to_proj(pattern_image(H_proj_to_cam_true, pattern), layout)
+            probe = np.array([[x, y] for x in np.linspace(0, 900, 7) for y in np.linspace(0, 450, 5)])
+            err = np.linalg.norm(apply(H_cp @ H_bc, probe) - apply(H_true, probe), axis=1)
+            print(f"detection at scale {scales[0]}: bench->projector error mean {err.mean():.2f} px, max {err.max():.2f} px")
+            assert rep["markers_seen"] == rep["markers_total"]
+            assert err.max() < 2.0, (scales, err.max())
+    finally:
+        calib.aruco.detect = original
+
+
 def test_css_matrix3d_matches_homography():
     H = np.array([[1.2, 0.1, 30], [0.05, 0.9, 12], [0.0004, 0.0002, 1.0]])
     vals = [float(v) for v in css_matrix3d(H)[len("matrix3d("):-1].split(",")]
@@ -85,5 +106,6 @@ def test_css_matrix3d_matches_homography():
 
 if __name__ == "__main__":
     test_end_to_end()
+    test_reduced_scale_detection_keeps_accuracy()
     test_css_matrix3d_matches_homography()
     print("all tests passed")

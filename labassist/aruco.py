@@ -18,14 +18,49 @@ def _dictionary():
     return cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, DICT_NAME))
 
 
-def detect(gray):
+def detect(gray, scales=None):
     """Detect markers in a grayscale (or BGR) image.
 
     Returns {id: corners} where corners is a (4, 2) float32 array in
-    marker order: top-left, top-right, bottom-right, bottom-left.
+    full-resolution pixels, marker order: top-left, top-right, bottom-right,
+    bottom-left.
+
+    Big images are also searched at reduced sizes: OpenCV 4.6 (Raspberry Pi
+    OS Bookworm) misses markers in full-resolution camera frames that it finds
+    at half size. Markers found only at a reduced size get their corners
+    refined on the full-resolution image, so accuracy is kept.
     """
     if gray.ndim == 3:
         gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    if scales is None:
+        longest = max(gray.shape)
+        scales = [1.0] + [s for s in (0.5, 0.25) if longest * s >= 600]
+    found = {}
+    for scale in scales:
+        if scale == 1.0:
+            img = gray
+        else:
+            img = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        for marker_id, corners in _detect_once(img).items():
+            if marker_id in found:
+                continue
+            if scale != 1.0:
+                # Pixel centres: small (u) <-> full ((u + 0.5) / scale - 0.5).
+                corners = _refine(gray, (corners + 0.5) / scale - 0.5, scale)
+            found[marker_id] = corners
+    return found
+
+
+def _refine(gray, corners, scale):
+    """Sharpen corners found on a downscaled image against the full-resolution one."""
+    win = max(2, int(round(2 / scale)))
+    pts = corners.reshape(-1, 1, 2).astype(np.float32)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.01)
+    cv2.cornerSubPix(gray, pts, (win, win), (-1, -1), criteria)
+    return pts.reshape(4, 2)
+
+
+def _detect_once(gray):
     dictionary = _dictionary()
     if hasattr(cv2.aruco, "ArucoDetector"):
         params = cv2.aruco.DetectorParameters()
