@@ -167,6 +167,9 @@ def main():
     bus = Bus(cfg.get("mqtt"), client_id=cfg.get("node_name", "camera-node"))
     cameras = {}
     for name, cam_cfg in (cfg.get("cameras") or {}).items():
+        if cam_cfg.get("enabled", True) is False:
+            log.info("camera %s disabled in config; skipping", name)
+            continue
         try:
             cameras[name] = Camera(name, cam_cfg, bus)
         except Exception:
