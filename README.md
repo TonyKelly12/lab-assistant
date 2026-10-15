@@ -12,6 +12,7 @@ calibration/     printable markers, lens calibration, projector calibration
 tools/           send_scene.py: draw things on the bench from the command line
 labassist/       shared helpers (ArUco, homography maths, MQTT, config)
 config/          *.example.yaml: copy to *.yaml and edit (your copies are git-ignored)
+orin/           Orin helpers: oled_stats.py for the Yahboom case screen
 systemd/         service files for running at boot
 tests/           offline tests with synthetic images (no hardware needed)
 ```
@@ -160,6 +161,27 @@ sudo systemctl enable --now camera-node    # or render-node
 
 For the kiosk, add `~/lab-assistant/render_node/kiosk.sh` to the desktop
 session's autostart.
+
+## Orin case screen
+
+`orin/oled_stats.py` drives the Yahboom CUBE Nano case's OLED. It shows three
+pages in turn: system (CPU, RAM, disk, IP), Jetson (GPU load, power mode,
+temps, fan) and lab services (MQTT, Ollama, voice, last MQTT message). It
+dims overnight, shifts the picture a pixel now and then against burn-in, and
+flashes a warning when the Tj temperature reaches 85 C.
+
+```bash
+pip3 install smbus Adafruit_SSD1306 Pillow paho-mqtt
+sudo pip3 install jetson-stats             # optional but better; reboot after
+python3 orin/oled_stats.py --preview /tmp/page.png   # check the layout, no hardware
+python3 orin/oled_stats.py --debug                   # run it; Ctrl+C to stop
+sudo cp systemd/oled-stats.service /etc/systemd/system/   # edit User/paths first
+sudo systemctl daemon-reload && sudo systemctl enable --now oled-stats
+```
+
+Put the MQTT login in `/etc/default/oled-stats` (`MQTT_USER=lab`,
+`MQTT_PASS=...`) so the "last message" line works. `--help` lists the
+options (night hours, alert temperature, page time, RGB effect).
 
 ## Scene format
 

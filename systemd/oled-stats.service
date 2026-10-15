@@ -1,0 +1,25 @@
+# Stats screen for the Yahboom CUBE Nano case on the Orin.
+# Install:  sudo cp systemd/oled-stats.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now oled-stats
+# Edit User and the paths if your username or clone path differ.
+# Optional MQTT login, kept out of git:  sudo nano /etc/default/oled-stats
+#   MQTT_USER=lab
+#   MQTT_PASS=yourpassword
+# Replaces Yahboom's yahboom_oled.service; disable that one if you installed it:
+#   sudo systemctl disable --now yahboom_oled
+[Unit]
+Description=Yahboom case OLED stats screen
+After=network-online.target jtop.service mosquitto.service
+Wants=network-online.target
+
+[Service]
+User=tony
+SupplementaryGroups=i2c
+WorkingDirectory=/home/tony/lab-assistant
+EnvironmentFile=-/etc/default/oled-stats
+ExecStart=/usr/bin/python3 orin/oled_stats.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
