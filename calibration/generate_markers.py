@@ -1,7 +1,11 @@
-"""Make printable sheets: the four bench markers and a checkerboard for lens calibration.
+"""Make the four bench markers and a checkerboard for lens calibration.
 
-Print both at 100% / "actual size" (turn off "fit to page"), then measure the
-100 mm scale bar with a ruler to confirm the printer didn't rescale.
+Two formats:
+  *.png  print at 100% / "actual size" (turn off "fit to page"), then measure
+         the 100 mm scale bar with a ruler to confirm the printer didn't rescale
+  *.svg  exact-size vectors for a laser engraver (millimetre units): black
+         fill = engrave, red outline = cut. Engrave dark on a light material
+         (plywood, birch, cardstock, white acrylic, anodised aluminium).
 
 Run:  python3 calibration/generate_markers.py --out prints/
 """
@@ -67,6 +71,69 @@ def checkerboard(cols, rows, square_mm):
     return img
 
 
+def marker_cells(marker_id):
+    """Marker as a grid of cells (True = black), including its black border."""
+    cells = 4 + 2                                   # 4x4 data bits + 1-cell border each side
+    img = aruco.marker_image(marker_id, cells * 20)
+    return [[img[r * 20 + 10, c * 20 + 10] < 128 for c in range(cells)] for r in range(cells)]
+
+
+def _rects_path(cells, x0, y0, cell):
+    """One SVG path of filled squares, merging horizontal runs of black cells."""
+    parts = []
+    for r, row in enumerate(cells):
+        c = 0
+        while c < len(row):
+            if row[c]:
+                start = c
+                while c < len(row) and row[c]:
+                    c += 1
+                x, y, w = x0 + start * cell, y0 + r * cell, (c - start) * cell
+                parts.append(f"M{x:.3f} {y:.3f}h{w:.3f}v{cell:.3f}h{-w:.3f}z")
+            else:
+                c += 1
+    return "".join(parts)
+
+
+def bench_svg(marker_mm):
+    """Four markers on separate tiles, each with a white quiet zone and a cut outline."""
+    cell = marker_mm / 6
+    quiet = cell                                    # white margin around the marker
+    label_h = max(8.0, marker_mm * 0.15)
+    tile_w = marker_mm + 2 * quiet
+    tile_h = marker_mm + 2 * quiet + label_h
+    gap = 6.0
+    width = 4 * tile_w + 5 * gap
+    height = tile_h + 2 * gap
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.2f}mm" height="{height:.2f}mm" '
+           f'viewBox="0 0 {width:.3f} {height:.3f}">',
+           f'<!-- ArUco {aruco.DICT_NAME} bench markers, {marker_mm:g} mm. Black = engrave, red = cut. -->']
+    for i, marker_id in enumerate(sorted(PLACEMENT)):
+        tx, ty = gap + i * (tile_w + gap), gap
+        out.append(f'<rect x="{tx:.3f}" y="{ty:.3f}" width="{tile_w:.3f}" height="{tile_h:.3f}" '
+                   f'fill="none" stroke="#ff0000" stroke-width="0.1"/>')
+        out.append(f'<path d="{_rects_path(marker_cells(marker_id), tx + quiet, ty + quiet, cell)}" fill="#000000"/>')
+        out.append(f'<text x="{tx + tile_w / 2:.3f}" y="{ty + 2 * quiet + marker_mm + label_h * 0.7:.3f}" '
+                   f'font-family="Arial, sans-serif" font-size="{label_h * 0.55:.2f}" text-anchor="middle" '
+                   f'fill="#000000">ID {marker_id} {PLACEMENT[marker_id]}</text>')
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def checkerboard_svg(cols, rows, square_mm):
+    """cols x rows squares (inner corners: cols-1 x rows-1) with a cut outline."""
+    margin = square_mm
+    width, height = cols * square_mm + 2 * margin, rows * square_mm + 2 * margin
+    cells = [[(r + c) % 2 == 0 for c in range(cols)] for r in range(rows)]
+    return "\n".join([
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.2f}mm" height="{height:.2f}mm" '
+        f'viewBox="0 0 {width:.3f} {height:.3f}">',
+        f'<!-- {cols - 1}x{rows - 1} inner corners, {square_mm:g} mm squares. Black = engrave, red = cut. -->',
+        f'<rect x="0" y="0" width="{width:.3f}" height="{height:.3f}" fill="none" stroke="#ff0000" stroke-width="0.1"/>',
+        f'<path d="{_rects_path(cells, margin, margin, square_mm)}" fill="#000000"/>',
+        "</svg>"])
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--out", default="prints")
@@ -85,7 +152,14 @@ def main():
         except ImportError:
             pass
         print("wrote", path)
-    print("Print at 100% scale (actual size), then check the 100 mm bar with a ruler.")
+    for name, svg in (("bench-markers.svg", bench_svg(a.marker_mm)),
+                      ("checkerboard-9x6.svg", checkerboard_svg(10, 7, a.square_mm))):
+        path = os.path.join(a.out, name)
+        with open(path, "w") as f:
+            f.write(svg)
+        print("wrote", path)
+    print("PNG: print at 100% scale (actual size), then check the 100 mm bar with a ruler.")
+    print("SVG: laser engrave the black, cut the red outlines; sizes are exact millimetres.")
 
 
 if __name__ == "__main__":

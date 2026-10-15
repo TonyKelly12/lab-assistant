@@ -87,7 +87,12 @@ python3 calibration/generate_markers.py --out prints/
 ```
 
 Print `prints/bench-markers.png` and `prints/checkerboard-9x6.png` at **100% /
-actual size**, and check the 100 mm bar with a ruler. Cut out the four bench
+actual size**, and check the 100 mm bar with a ruler.
+
+No printer? Laser them instead: `prints/bench-markers.svg` and
+`prints/checkerboard-9x6.svg` are exact-size vectors in millimetres (black fill =
+engrave, red outline = cut). Engrave dark on a light, matte material such as
+plywood, cardstock or white acrylic. Keep the white margin around each marker. Cut out the four bench
 markers and tape them flat at the corners of the area you want to project on
 (ID 0 back-left, 1 back-right, 2 front-right, 3 front-left), inside the
 projected image and in view of the camera. Measure each marker's centre from
