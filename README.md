@@ -12,7 +12,7 @@ calibration/     printable markers, lens calibration, projector calibration
 tools/           send_scene.py: draw things on the bench from the command line
 labassist/       shared helpers (ArUco, homography maths, MQTT, config)
 config/          *.example.yaml: copy to *.yaml and edit (your copies are git-ignored)
-orin/           Orin helpers: oled_stats.py for the Yahboom case screen
+orin/            Orin helpers: oled_stats.py for the Yahboom case screen
 systemd/         service files for running at boot
 tests/           offline tests with synthetic images (no hardware needed)
 ```
