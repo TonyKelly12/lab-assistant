@@ -30,7 +30,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from labassist import calib  # noqa: E402
 from labassist import config as configlib  # noqa: E402
 from labassist.geometry import load_json, save_json, scale_intrinsics  # noqa: E402
-from labassist.net import get_image, post_json, post_png  # noqa: E402
+from labassist.net import get_image, get_json, post_json, post_png  # noqa: E402
+
+
+def require_service(name, url, start_cmd, check=None):
+    """Exit with a plain message if a service isn't answering."""
+    try:
+        info = get_json(f"{url}/health", timeout=5)
+    except Exception as exc:
+        sys.exit(f"The {name} isn't answering at {url} ({exc}).\n"
+                 f"Start it in another terminal and leave it running:\n  {start_cmd}")
+    if check:
+        check(info)
+    return info
 
 
 def check_scene(bench_markers, area):
@@ -72,6 +84,19 @@ def main():
     out_path = cfg.get("output", "calibration/bench.json")
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     snapshot_url = f"{cam_url}/snapshot/{camera}.jpg"
+
+    def camera_listed(info):
+        if camera not in info.get("cameras", []):
+            sys.exit(f"The camera service is running but has no camera named {camera!r} "
+                     f"(it has {info.get('cameras')}). Fix 'camera' in {a.config}.")
+
+    require_service("camera service", cam_url,
+                    "python3 -m camera_node.service --config config/camera-node.yaml", camera_listed)
+    render_info = require_service("render server", render_url,
+                                  "python3 -m render_node.server --config config/render-node.yaml")
+    if not render_info.get("viewers"):
+        sys.exit("The render server is running, but no projector page is connected to it.\n"
+                 "Open the page on the projector first:\n  DISPLAY=:0 ./render_node/kiosk.sh")
 
     def capture(label):
         time.sleep(a.settle)
