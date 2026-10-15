@@ -7,7 +7,7 @@ BROWSER="$(command -v chromium-browser || command -v chromium)"
 exec "$BROWSER" \
   --kiosk --app="$URL" \
   --noerrdialogs --disable-infobars --no-first-run \
-  --password-store=basic \
+  --password-store=basic --disable-background-networking \
   --force-device-scale-factor=1 \
   --disable-session-crashed-bubble --disable-features=Translate \
   --check-for-update-interval=31536000
