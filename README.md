@@ -12,7 +12,8 @@ calibration/     printable markers, lens calibration, projector calibration
 tools/           send_scene.py: draw things on the bench from the command line
 labassist/       shared helpers (ArUco, homography maths, MQTT, config)
 config/          *.example.yaml: copy to *.yaml and edit (your copies are git-ignored)
-orin/            Orin helpers: oled_stats.py for the Yahboom case screen
+orin/            Orin: router.py (sentence -> action), oled_stats.py (case screen)
+homelab/         tools for the homelab AI: lab_tools.py + an MCP server for Hermes
 systemd/         service files for running at boot
 tests/           offline tests with synthetic images (no hardware needed)
 ```
@@ -161,6 +162,28 @@ sudo systemctl enable --now camera-node    # or render-node
 
 For the kiosk, add `~/lab-assistant/render_node/kiosk.sh` to the desktop
 session's autostart.
+
+## Orin intent router
+
+`orin/router.py` turns a sentence into an action: simple rules first, then the
+local model (Ollama, fixed JSON reply), and anything needing real thought goes
+to the main brain on `lab/brain/request`. Every decision is logged to
+`logs/router.jsonl` for fine-tuning later.
+
+```bash
+cp config/orin.example.yaml config/orin.yaml        # edit the password and devices
+python3 orin/router.py try "turn on the exhaust fan"     # see the decision, sends nothing
+sudo cp systemd/lab-router.service /etc/systemd/system/  # edit User/paths first
+sudo systemctl daemon-reload && sudo systemctl enable --now lab-router
+mosquitto_pub -h localhost -u lab -P '...' -t lab/router/command -m "show me a breadboard grid"
+```
+
+## Homelab tools (Hermes)
+
+`homelab/lab_tools.py` has the lab as plain Python functions (draw, clear,
+switch devices, camera snapshot, markers, ask the router); `homelab/mcp_server.py`
+serves them over MCP. Settings come from `LAB_*` environment variables, and
+`config/mosquitto-acl.example` gives the homelab its own limited broker login.
 
 ## Orin case screen
 

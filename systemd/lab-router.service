@@ -1,0 +1,21 @@
+# Intent router on the Orin.
+# Install:  sudo cp systemd/lab-router.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now lab-router
+# Edit User and the paths if your username or clone path differ.
+# Optional, keeps the MQTT password out of config/orin.yaml:
+#   sudo nano /etc/default/lab-router      ->   MQTT_PASS=yourpassword
+[Unit]
+Description=Lab assistant intent router
+After=network-online.target mosquitto.service ollama.service
+Wants=network-online.target
+
+[Service]
+User=tony
+WorkingDirectory=/home/tony/lab-assistant
+EnvironmentFile=-/etc/default/lab-router
+ExecStart=/usr/bin/python3 orin/router.py --config config/orin.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

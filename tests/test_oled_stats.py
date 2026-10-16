@@ -11,7 +11,7 @@ def sample(**jetson):
          "tj_temp": 102.0, "fan": 100.0}
     j.update(jetson)
     return {"now": 100000.0, "clock": "23:59:59", "cpu": 100, "ram": (100, 15.6), "disk": (100, 1999.0),
-            "ip": "192.168.100.200", "jetson": j,
+            "ip": "192.0.2.200", "jetson": j,
             "services": {"mqtt": False, "ollama": False, "voice": 2},
             "last_message": 0.0, "mqtt_listening": True}
 

@@ -8,3 +8,8 @@ calibration/lens-photos/
 calibration/capture-*.jpg
 prints/
 diagnose-bench.png
+# Router decision logs (your voice commands) stay local.
+logs/
+# Local secrets, if you keep any next to the repo.
+.env
+*.env

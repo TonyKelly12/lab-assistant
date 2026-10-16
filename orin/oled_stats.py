@@ -94,7 +94,7 @@ def local_ip():
     # OS would use to reach the LAN.
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("192.168.0.1", 9))
+        s.connect(("192.0.2.1", 9))  # reserved test address; only the route matters
         return s.getsockname()[0]
     except OSError:
         return None
@@ -554,7 +554,7 @@ def preview(path):
     """Render every page with sample numbers to PNGs (scaled up 4x), no hardware needed."""
     sample = {
         "now": 1000.0, "clock": "17:42:05", "cpu": 12, "ram": (35, 7.4), "disk": (41, 233.0),
-        "ip": "192.168.0.50",
+        "ip": "192.0.2.50",
         "jetson": {"gpu": 34.0, "power_mode": "MAXN_SUPER", "cpu_temp": 52.1, "gpu_temp": 49.4,
                    "tj_temp": 54.0, "fan": 40.0},
         "services": {"mqtt": True, "ollama": True, "voice": 3},

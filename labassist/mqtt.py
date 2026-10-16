@@ -48,7 +48,11 @@ class Bus:
         for topic, handler in self._subs.items():
             if paho.topic_matches_sub(topic, msg.topic):
                 try:
-                    handler(msg.topic, json.loads(msg.payload or b"null"))
+                    try:
+                        payload = json.loads(msg.payload or b"null")
+                    except ValueError:  # plain text, e.g. mosquitto_pub -m "lights on"
+                        payload = msg.payload.decode("utf-8", "replace")
+                    handler(msg.topic, payload)
                 except Exception:
                     log.exception("handler failed for %s", msg.topic)
 

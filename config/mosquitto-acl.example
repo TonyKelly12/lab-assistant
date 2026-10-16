@@ -1,0 +1,23 @@
+# Mosquitto access list: who may read/write which topics.
+# Install on the Orin:
+#   sudo cp config/mosquitto-acl.example /etc/mosquitto/acl
+#   sudo chown root:mosquitto /etc/mosquitto/acl && sudo chmod 640 /etc/mosquitto/acl
+#   echo "acl_file /etc/mosquitto/acl" | sudo tee -a /etc/mosquitto/conf.d/lab.conf
+#   sudo mosquitto_passwd /etc/mosquitto/passwd homelab      # add the homelab login
+#   sudo systemctl restart mosquitto
+# With an acl_file, anything not listed here is denied.
+
+# Shop nodes, the router and the case screen.
+user lab
+topic readwrite lab/#
+
+# The homelab (Hermes / main brain): may draw, switch devices, talk to the
+# router and answer brain requests, but nothing else.
+user homelab
+topic write lab/display/#
+topic write lab/device/+/set
+topic write lab/router/command
+topic read lab/router/reply
+topic read lab/camera/#
+topic read lab/brain/request
+topic write lab/brain/reply

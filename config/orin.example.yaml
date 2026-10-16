@@ -1,0 +1,29 @@
+# Orin (sub brain). Copy to config/orin.yaml and edit. Your copy is git-ignored.
+node_name: orin-router
+
+mqtt:
+  enabled: true
+  host: 127.0.0.1          # the broker runs on the Orin itself
+  port: 1883
+  username: lab
+  password: change-me      # or leave this out and set MQTT_PASS in /etc/default/lab-router
+
+router:
+  ollama:
+    url: http://127.0.0.1:11434
+    model: qwen2.5:3b
+    timeout_s: 30
+  log_file: logs/router.jsonl      # every decision + feedback, for fine-tuning later
+  default_surface: bench
+  surfaces:
+    bench:
+      area_mm: [0, 0, 1200, 600]   # drawable area in bench mm (48 x 24 in bench)
+      grid_origin_mm: [100, 100]   # where "show a grid" puts its top-left hole
+  grid_default: [30, 10]
+  # Device name -> other things you might call it. The router publishes
+  # lab/device/<name>/set {"state": "on"|"off"}; Home Assistant / ESPHome act on it.
+  devices:
+    lights: [light, bench lights, shop lights, lamp]
+    exhaust: [exhaust fan, fume extractor, extractor, fume fan]
+    fan: [desk fan, bench fan]
+  wake_words: [jarvis, hey jarvis, ok jarvis]
