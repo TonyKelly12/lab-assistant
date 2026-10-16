@@ -27,13 +27,14 @@ def bench_mask(shape, H_cam_to_bench, area_mm, exclude_mm=(), exclude_radius=75.
     return mask
 
 
-def local_whiteness(image):
+def local_whiteness(image, mask=None):
     """How much whiter each pixel is than the bench around it.
 
-    Brightness minus a heavily blurred copy (so the projector's bright
-    centre and dim edges cancel out), minus colourfulness when the image
-    is lit well enough for colour to mean something (white plastic vs
-    brown MDF). Returns float32, same size as the image.
+    Brightness minus a heavily blurred copy of the bench (so the projector's
+    bright centre and dim edges cancel out). Only bench pixels feed the
+    blur, so the dark surroundings don't make the bench's own edges look
+    bright. When the image is well lit, colourfulness is subtracted too
+    (white plastic vs brown MDF). Returns float32, same size as the image.
     """
     if image.ndim == 2:
         L = image.astype(np.float32)
@@ -42,12 +43,19 @@ def local_whiteness(image):
         lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
         L = lab[..., 0]
         chroma = np.hypot(lab[..., 1] - 128, lab[..., 2] - 128)
-    small = cv2.resize(L, None, fx=0.125, fy=0.125, interpolation=cv2.INTER_AREA)
-    background = cv2.resize(cv2.GaussianBlur(small, (0, 0), 20), (L.shape[1], L.shape[0]),
+    m = np.ones_like(L) if mask is None else (mask > 0).astype(np.float32)
+    f = 0.125
+    small_L = cv2.resize(L * m, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    small_m = cv2.resize(m, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    blur_L = cv2.GaussianBlur(small_L, (0, 0), 20)
+    blur_m = cv2.GaussianBlur(small_m, (0, 0), 20)
+    background = cv2.resize(blur_L / np.maximum(blur_m, 1e-3), (L.shape[1], L.shape[0]),
                             interpolation=cv2.INTER_LINEAR)
     score = L - background
-    if np.median(L) > 80:                 # colour is only trustworthy in a well-lit image
+    bench_L = L[m > 0] if m.any() else L
+    if np.median(bench_L) > 80:           # colour is only trustworthy on a well-lit bench
         score -= 1.5 * cv2.GaussianBlur(chroma, (0, 0), 3)
+    score[m == 0] = 0
     return score
 
 
@@ -58,7 +66,7 @@ def find_boards(gray, H_cam_to_bench, mask, intrinsics=None, min_mm=20.0, max_mm
     side from the bench x axis (0-180), "corners": 4x[x, y] (all bench mm),
     "fill": how solid the shape is, "px": corners in camera pixels}.
     """
-    score = local_whiteness(gray)
+    score = local_whiteness(gray, mask)
     vals = score[mask > 0]
     if vals.size == 0:
         return [], 0
