@@ -27,21 +27,45 @@ def bench_mask(shape, H_cam_to_bench, area_mm, exclude_mm=(), exclude_radius=75.
     return mask
 
 
-def find_boards(gray, H_cam_to_bench, mask, intrinsics=None, min_mm=20.0, max_mm=400.0, min_fill=0.6):
+def local_whiteness(image):
+    """How much whiter each pixel is than the bench around it.
+
+    Brightness minus a heavily blurred copy (so the projector's bright
+    centre and dim edges cancel out), minus colourfulness when the image
+    is lit well enough for colour to mean something (white plastic vs
+    brown MDF). Returns float32, same size as the image.
+    """
+    if image.ndim == 2:
+        L = image.astype(np.float32)
+        chroma = np.zeros_like(L)
+    else:
+        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB).astype(np.float32)
+        L = lab[..., 0]
+        chroma = np.hypot(lab[..., 1] - 128, lab[..., 2] - 128)
+    small = cv2.resize(L, None, fx=0.125, fy=0.125, interpolation=cv2.INTER_AREA)
+    background = cv2.resize(cv2.GaussianBlur(small, (0, 0), 20), (L.shape[1], L.shape[0]),
+                            interpolation=cv2.INTER_LINEAR)
+    score = L - background
+    if np.median(L) > 80:                 # colour is only trustworthy in a well-lit image
+        score -= 1.5 * cv2.GaussianBlur(chroma, (0, 0), 3)
+    return score
+
+
+def find_boards(gray, H_cam_to_bench, mask, intrinsics=None, min_mm=20.0, max_mm=250.0, min_fill=0.75):
     """Return candidate boards, biggest first.
 
     Each: {"center": [x, y], "size": [short, long], "angle": deg of the long
     side from the bench x axis (0-180), "corners": 4x[x, y] (all bench mm),
     "fill": how solid the shape is, "px": corners in camera pixels}.
     """
-    if gray.ndim == 3:
-        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
-    vals = gray[mask > 0]
+    score = local_whiteness(gray)
+    vals = score[mask > 0]
     if vals.size == 0:
         return [], 0
     med, top = np.percentile(vals, [50, 99.9])
-    thresh = med + 0.5 * (top - med)       # halfway between bench and the brightest things on it
-    binary = ((gray > thresh) & (mask > 0)).astype(np.uint8) * 255
+    thresh = med + 0.5 * (top - med)       # halfway between plain bench and the whitest things on it
+    binary = ((score > thresh) & (mask > 0)).astype(np.uint8) * 255
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     found = []

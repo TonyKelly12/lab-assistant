@@ -70,6 +70,9 @@ def main():
                 else:
                     post_json(f"{render_url}/scene", {"items": []})
 
+    raw_out = os.path.splitext(a.debug_out)[0] + "-raw.jpg"
+    cv2.imwrite(raw_out, img)   # the untouched photo, for debugging
+
     # 2. Calibration was made at one image size; rescale if this photo differs.
     h, w = img.shape[:2]
     cw, ch = calib.get("camera_image_size", [w, h])
@@ -111,7 +114,7 @@ def main():
     if gray.mean() < 60:
         vis = cv2.convertScaleAbs(vis, alpha=min(4.0, 90.0 / max(gray.mean(), 1)))
     cv2.imwrite(a.debug_out, vis)
-    print(f"saved {a.debug_out}")
+    print(f"saved {a.debug_out} (annotated) and {raw_out} (raw photo)")
     if found and not a.no_show and not a.image:
         post_json(f"{render_url}/scene", board.outline_scene(found))
         print("Outline projected: the cyan box should sit on the breadboard's edges.")
