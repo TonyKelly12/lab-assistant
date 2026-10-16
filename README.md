@@ -16,6 +16,7 @@ orin/            Orin: router.py (sentence -> action), oled_stats.py (case scree
 homelab/         tools for the homelab AI: lab_tools.py + an MCP server for Hermes
 systemd/         service files for running at boot
 tests/           offline tests with synthetic images (no hardware needed)
+docs/            ARCHITECTURE.md: how it all works
 ```
 
 ## How it fits together
