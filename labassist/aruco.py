@@ -36,18 +36,23 @@ def detect(gray, scales=None):
         longest = max(gray.shape)
         scales = [1.0] + [s for s in (0.5, 0.25) if longest * s >= 600]
     found = {}
-    for scale in scales:
-        if scale == 1.0:
-            img = gray
-        else:
-            img = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        for marker_id, corners in _detect_once(img).items():
-            if marker_id in found:
-                continue
-            if scale != 1.0:
-                # Pixel centres: small (u) <-> full ((u + 0.5) / scale - 0.5).
-                corners = _refine(gray, (corners + 0.5) / scale - 0.5, scale)
-            found[marker_id] = corners
+    # Second pass on a locally contrast-boosted copy: helps low-contrast
+    # markers (e.g. laser-engraved wood, where the burn is mid-brown with
+    # grain showing through). Corners are always refined on the original.
+    enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    for source in (gray, enhanced):
+        for scale in scales:
+            if scale == 1.0:
+                img = source
+            else:
+                img = cv2.resize(source, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            for marker_id, corners in _detect_once(img).items():
+                if marker_id in found:
+                    continue
+                if scale != 1.0:
+                    # Pixel centres: small (u) <-> full ((u + 0.5) / scale - 0.5).
+                    corners = _refine(gray, (corners + 0.5) / scale - 0.5, scale)
+                found[marker_id] = corners
     return found
 
 
