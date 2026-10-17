@@ -359,6 +359,49 @@ class Router:
                         "has_scene": bool(payload.get("scene"))})
 
 
+# ------------------------------------------------------------------ control-plane heartbeat
+# CROSS-NODE: this talks to the homelab (main-brain-infrastructure) control
+# plane, not to the lab bus. It is OPT-IN and best-effort: with no
+# CONTROL_PLANE_URL set it does nothing, and the router runs exactly as before.
+# Enable by setting, in the Orin's environment (e.g. /etc/default/lab-router):
+#   CONTROL_PLANE_URL=https://api.artitechs.net
+#   CONTROL_PLANE_TOKEN=<agent token minted with the 'agents:heartbeat' scope>
+# It POSTs to <url>/agents/heartbeat every CONTROL_PLANE_HEARTBEAT_SECONDS so the
+# Orin router shows up (and is counted) as a live agent in the control plane.
+
+def start_heartbeat(s, stop):
+    url = os.environ.get("CONTROL_PLANE_URL", "").strip().rstrip("/")
+    if not url:
+        return  # disabled
+    token = os.environ.get("CONTROL_PLANE_TOKEN", "").strip()
+    agent_id = os.environ.get("CONTROL_PLANE_HEARTBEAT_ID", "router")
+    interval = int(os.environ.get("CONTROL_PLANE_HEARTBEAT_SECONDS", "15"))
+    body = {
+        "id": agent_id,
+        "name": "Orin intent router",
+        "kind": "router",
+        "host": os.environ.get("CONTROL_PLANE_HOST", "orin"),
+        "model": s["ollama"]["model"],
+    }
+
+    def beat():
+        data = json.dumps(body).encode()
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        while not stop.is_set():
+            try:
+                req = urllib.request.Request(url + "/agents/heartbeat", data=data,
+                                             headers=headers, method="POST")
+                urllib.request.urlopen(req, timeout=10).read()
+            except Exception as exc:  # best-effort; never disrupt routing
+                log.debug("heartbeat failed: %s", exc)
+            stop.wait(interval)
+
+    threading.Thread(target=beat, daemon=True).start()
+    log.info("control-plane heartbeat -> %s/agents/heartbeat (every %ss)", url, interval)
+
+
 # ------------------------------------------------------------------ command line
 
 def main():
@@ -405,6 +448,7 @@ def main():
     log.info("router running; model %s, log %s", s["ollama"]["model"], s["log_file"])
 
     stop = threading.Event()
+    start_heartbeat(s, stop)          # cross-node, opt-in (see start_heartbeat)
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     stop.wait()

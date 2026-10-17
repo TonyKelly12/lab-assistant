@@ -179,6 +179,17 @@ sudo systemctl daemon-reload && sudo systemctl enable --now lab-router
 mosquitto_pub -h localhost -u lab -P '...' -t lab/router/command -m "show me a breadboard grid"
 ```
 
+**Optional — appear in the homelab control plane.** The router can report itself
+as a live agent to the main-brain control plane. It's off unless you set these
+in the Orin's environment (e.g. `/etc/default/lab-router`); the router runs
+exactly the same without them:
+
+```bash
+CONTROL_PLANE_URL=https://api.artitechs.net        # main-brain API base
+CONTROL_PLANE_TOKEN=...                             # agent token, scope: agents:heartbeat
+# CONTROL_PLANE_HEARTBEAT_SECONDS=15   CONTROL_PLANE_HEARTBEAT_ID=router
+```
+
 ## Homelab tools (Hermes)
 
 `homelab/lab_tools.py` has the lab as plain Python functions (draw, clear,
