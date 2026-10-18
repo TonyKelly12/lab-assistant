@@ -47,7 +47,7 @@ from labassist.mqtt import Bus  # noqa: E402
 
 log = logging.getLogger("router")
 
-INTENTS = ["show_text", "show_grid", "clear_bench", "set_device", "ask_brain"]
+INTENTS = ["show_text", "show_grid", "clear_bench", "set_device", "highlight_board", "ask_brain"]
 
 
 # ------------------------------------------------------------------ settings
@@ -119,6 +119,24 @@ _GRID = re.compile(r"^(?:show|display|project|draw|give)(?:\s+me)?(?:\s+(?:a|the
                    r"(?:\s+(\d+)\s*(?:by|x)\s*(\d+))?$")
 _TEXT = re.compile(r"^(?:write|show text|show the text|display text|project text|show the words)\s+(.+)$")
 
+# Board-aware projection cues. When one matches, the whole (normalised) sentence
+# is forwarded to the bench-vision service as a free-text `ref`; it owns the
+# parsing (column/row/hole/rail/place/find/clear) since it has the live board.
+_BOARD_CUES = [
+    re.compile(r"\b(?:bread)?board\b.*\b(find|scan|outline|clear|wipe|where|locate|show)\b"),
+    re.compile(r"\b(find|scan|outline|locate|where\b.*\bis)\b.*\b(?:bread)?board\b"),
+    re.compile(r"\b(?:column|col)\s*#?\s*\d"),
+    re.compile(r"\brow\s*[a-j]\b"),
+    re.compile(r"\bhole\s*[a-j]\s*\d"),
+    re.compile(r"\b(?:power|ground|positive|negative)?\s*rails?\b"),
+    re.compile(r"\b(?:place|put|mount|seat)\b.*\b(?:column|col)\s*\d"),
+]
+
+
+def board_ref(text):
+    """Return the ref to forward to bench-vision if this looks like a board command."""
+    return text if any(p.search(text) for p in _BOARD_CUES) else None
+
 
 def rule_decision(text, s):
     m = _CLEAR.match(text)
@@ -133,6 +151,9 @@ def rule_decision(text, s):
     m = _TEXT.match(text)
     if m:
         return {"intent": "show_text", "text": m.group(1).strip("'\" ")}
+    ref = board_ref(text)
+    if ref:
+        return {"intent": "highlight_board", "ref": ref}
     for i, pattern in enumerate(_ON_OFF):
         m = pattern.match(text)
         if not m:
@@ -151,6 +172,7 @@ def build_schema(s):
     props = {
         "intent": {"type": "string", "enum": INTENTS},
         "text": {"type": "string"},
+        "ref": {"type": "string"},
         "state": {"type": "string", "enum": ["on", "off"]},
         "cols": {"type": "integer"},
         "rows": {"type": "integer"},
@@ -171,6 +193,9 @@ Reply with JSON only, using exactly one intent:
 - clear_bench: remove everything from the projector.
 - set_device: switch a device. Fields: device, state ("on" or "off").
   Devices: {devices}.
+- highlight_board: anything about the breadboard on the bench - finding it, or
+  lighting up a column, a row, a hole, the power rails, or where a part goes.
+  Fields: ref (the request, unchanged - the bench service parses it).
 - ask_brain: anything else - questions, explanations, datasheets, pinouts,
   debugging help, or anything you are unsure about. Fields: text (the request, unchanged).
 
@@ -181,6 +206,10 @@ Examples:
 "get rid of the fumes" -> {{"intent": "set_device", "device": "exhaust", "state": "on"}}
 "I need a twenty by five hole grid" -> {{"intent": "show_grid", "cols": 20, "rows": 5}}
 "I'm done, wipe it all" -> {{"intent": "clear_bench"}}
+"find my breadboard" -> {{"intent": "highlight_board", "ref": "find my breadboard"}}
+"light up column 12" -> {{"intent": "highlight_board", "ref": "light up column 12"}}
+"highlight the power rails" -> {{"intent": "highlight_board", "ref": "highlight the power rails"}}
+"place the ESP32 at column 10" -> {{"intent": "highlight_board", "ref": "place the ESP32 at column 10"}}
 "what's the pinout of an ESP32-S3" -> {{"intent": "ask_brain", "text": "what's the pinout of an ESP32-S3"}}
 "why is my LED so dim" -> {{"intent": "ask_brain", "text": "why is my LED so dim"}}"""
 
@@ -226,6 +255,9 @@ def clean(decision, original_text, s):
     elif intent == "show_text" and str(d.get("text", "")).strip():
         out["text"] = str(d["text"]).strip()[:80]
         return out
+    elif intent == "highlight_board" and str(d.get("ref", "")).strip():
+        out["ref"] = str(d["ref"]).strip()[:120]
+        return out
     elif intent == "show_grid":
         cols, rows = s["grid_default"]
         try:
@@ -265,6 +297,10 @@ def actions_for(decision, request_id, original_text, source, s):
     if intent == "set_device":
         return ([(f"lab/device/{decision['device']}/set", {"state": decision["state"]})],
                 f"{decision['device'].capitalize()} {decision['state']}.")
+    if intent == "highlight_board":
+        # bench-vision does the drawing and sends the spoken reply (same id),
+        # so the router stays quiet here (empty reply -> not published).
+        return [("lab/board/request", {"ref": decision.get("ref", original_text), "id": request_id})], ""
     # ask_brain
     return ([("lab/brain/request", {"id": request_id, "text": decision.get("text", original_text),
                                     "source": source})],
@@ -325,7 +361,10 @@ class Router:
         if not dry_run:
             for topic, payload in messages:
                 self.publish(topic, payload)
-            self.publish("lab/router/reply", {"id": request_id, "text": reply, "intent": decision["intent"]})
+            # Empty reply means a downstream service (bench-vision) will send the
+            # spoken reply with this same id, so the router doesn't double up.
+            if reply:
+                self.publish("lab/router/reply", {"id": request_id, "text": reply, "intent": decision["intent"]})
         return {"id": request_id, "decision": decision, "messages": messages, "reply": reply, **details}
 
     # MQTT handlers -----------------------------------------------------

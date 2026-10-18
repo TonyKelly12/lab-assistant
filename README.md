@@ -207,6 +207,24 @@ Put the MQTT login in `/etc/default/oled-stats` (`MQTT_USER=lab`,
 `MQTT_PASS=...`) so the "last message" line works. `--help` lists the
 options (night hours, alert temperature, page time, RGB effect).
 
+## Board-aware projection, voice, and the brain bridge (demo)
+
+Three services build the JARVIS demo on top of everything above. Full setup,
+storyboard and dry-run commands are in `docs/DEMO.md`.
+
+- **Bench-vision** (`shopvision/`, shop Pi) — the hero. Finds the real breadboard
+  and projects onto the actual holes. Listens on MQTT `lab/board/request
+  {"ref": "column 12"}`; `ref` can be a column, row, hole (`e12`), the power rails,
+  "find my board", or "place the ESP32 at column N". `labassist/breadboard.py` holds
+  the hole geometry (tune the profile once against `/board?ref=…&draw=1`). The Orin
+  router forwards board-ish speech here automatically (`highlight_board` intent).
+- **Voice** (`orin/voice_service.py` + `shop/voice_satellite.py`) — the satellite does
+  wake word + capture and POSTs the clip to the Orin, which runs Whisper + Piper and
+  speaks every reply back. `--ptt` on the satellite is a push-to-talk fallback.
+- **Brain bridge** (`homelab/brain_bridge.py`, homelab) — answers `lab/brain/request`
+  with the main-brain RAG and replies on `lab/brain/reply`; the router speaks it and
+  draws a headline on the bench.
+
 ## Scene format
 
 `POST /scene` (or MQTT `lab/display/bench`) with `{"items": [...], "append": false}`.
