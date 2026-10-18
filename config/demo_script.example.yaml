@@ -1,0 +1,13 @@
+# Manual demo storyboard for tools/demo_run.py. Copy to config/demo_script.yaml
+# and tweak the lines. `say` is what you read on camera (for dubbing voice in
+# edit); `cmd` is what gets sent to the router. `wait` pauses after a beat
+# (give the homelab brain time to answer).
+steps:
+  - {beat: "Cold open", say: "Jarvis, turn on the bench lights.", cmd: "turn on the bench lights"}
+  - {beat: "Cold open", say: "Kill the fumes for me.",            cmd: "turn on the exhaust fan"}
+  - {beat: "The reveal", say: "Jarvis, find my board.",           cmd: "find my board"}
+  - {beat: "The hero",   say: "Light up column 12.",              cmd: "light up column 12"}
+  - {beat: "The hero",   say: "Highlight the power rails.",        cmd: "highlight the power rails"}
+  - {beat: "The hero",   say: "Show me where the ESP32 goes.",     cmd: "place the ESP32 at column 10"}
+  - {beat: "The brain",  say: "Why won't my ESP32 boot from USB?", cmd: "why won't my ESP32 boot from USB?", wait: 12}
+  - {beat: "Reset",      say: "Clear the board.",                  cmd: "clear the board"}

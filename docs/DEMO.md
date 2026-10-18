@@ -58,6 +58,26 @@ mosquitto_pub -h <orin> -u lab -P "$MQTT_PASS" -t lab/brain/request -m '{"id":"b
 #     Filming fallback: python3 shop/voice_satellite.py --ptt   (press Enter, then speak)
 ```
 
+## Backup: run the whole demo without voice
+
+If the voice stack misbehaves on the day, drive the beats by hand with
+`tools/demo_run.py`. It publishes each line on the same `lab/router/command`
+path the voice service uses, so the bench reacts identically — you just trigger
+beats on cue and dub the voice in editing. It needs only the broker (router +
+bench-vision + brain bridge running); the voice services can be off.
+
+```bash
+python3 tools/demo_run.py --config config/orin.yaml            # Enter fires each beat
+python3 tools/demo_run.py --config config/orin.yaml --auto --delay 6
+python3 tools/demo_run.py --config config/orin.yaml --list     # print the script, send nothing
+python3 tools/demo_run.py --config config/orin.yaml --from 4   # jump to a beat (e.g. after a retake)
+```
+
+It prints the on-camera line to read (`SAY:`) and whatever the system says back
+(`SPOKEN:`), so you can match the voiceover. Edit the lines in
+`config/demo_script.example.yaml` (copy to `config/demo_script.yaml`, pass with
+`--script`) without touching code.
+
 ## Storyboard (shot list + exact lines)
 
 1. **Cold open.** Bench dark, OLED cycling stats. *"Jarvis, turn on the bench lights."*
