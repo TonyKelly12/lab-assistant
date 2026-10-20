@@ -210,7 +210,9 @@ options (night hours, alert temperature, page time, RGB effect).
 ## Board-aware projection, voice, and the brain bridge (demo)
 
 Three services build the JARVIS demo on top of everything above. Full setup,
-storyboard and dry-run commands are in `docs/DEMO.md`.
+storyboard and dry-run commands are in `docs/DEMO.md`. For day-to-day startup
+(auto-start on boot + a web console to run/restart services and fire demo beats
+from a tablet), see `docs/OPERATING.md` and `scripts/install-services.sh`.
 
 - **Bench-vision** (`shopvision/`, shop Pi) — the hero. Finds the real breadboard
   and projects onto the actual holes. Listens on MQTT `lab/board/request

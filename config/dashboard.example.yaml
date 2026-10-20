@@ -1,0 +1,38 @@
+# Lab console config. Copy to config/dashboard.yaml. Run one per node.
+# The HUB (e.g. the Orin) lists peers and aggregates/controls them, so one page
+# shows every node. A peer (e.g. the shop Pi) just lists its own services.
+node_name: orin
+
+# systemd units THIS node controls (must match the sudoers allow-list):
+services:
+  - lab-router
+  - oled-stats
+  - mosquitto
+  - ollama
+  # - voice-service
+
+# read-only health pings (things without a local systemd unit here):
+remotes:
+  - {name: camera,       url: "http://jackpot.local:8080/health"}
+  - {name: projector,    url: "http://jackpot.local:8090/health"}
+  - {name: bench-vision, url: "http://jackpot.local:8070/health"}
+
+# other console agents to aggregate + drive (hub only). Omit on a peer.
+peers:
+  - {name: shop, url: "http://jackpot.local:8099"}   # same DASHBOARD_KEY, or set key:
+
+# used by the "Demo deck" to send commands to the router:
+mqtt: {enabled: true, host: localhost, port: 1883, username: lab}   # MQTT_PASS via env
+demo_script: config/demo_script.yaml
+
+require_key: true        # control actions need X-Dash-Key; set DASHBOARD_KEY in the env
+http: {host: 0.0.0.0, port: 8099}
+
+# ---- Example peer (shop Pi) config, for reference ----
+# node_name: shop
+# services: [camera-node, render-node, shopvision]   # + voice-satellite
+# remotes: []
+# peers: []
+# mqtt: {enabled: true, host: orin.local, port: 1883, username: lab}
+# require_key: true
+# http: {host: 0.0.0.0, port: 8099}

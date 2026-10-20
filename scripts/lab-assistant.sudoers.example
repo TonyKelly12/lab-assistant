@@ -1,0 +1,16 @@
+# Narrow sudo so the console can control ONLY the lab units, nothing else.
+# Install:  sudo install -m 0440 scripts/lab-assistant.sudoers.example /etc/sudoers.d/lab-assistant
+#           sudo visudo -c           # verify
+# Replace <user> with the account the console runs as, and trim the unit list
+# to the ones this node actually has. install-services.sh generates this for you.
+Cmnd_Alias LAB_SVC = \
+  /usr/bin/systemctl start lab-router, /usr/bin/systemctl stop lab-router, /usr/bin/systemctl restart lab-router, \
+  /usr/bin/systemctl start oled-stats, /usr/bin/systemctl stop oled-stats, /usr/bin/systemctl restart oled-stats, \
+  /usr/bin/systemctl start camera-node, /usr/bin/systemctl stop camera-node, /usr/bin/systemctl restart camera-node, \
+  /usr/bin/systemctl start render-node, /usr/bin/systemctl stop render-node, /usr/bin/systemctl restart render-node, \
+  /usr/bin/systemctl start shopvision, /usr/bin/systemctl stop shopvision, /usr/bin/systemctl restart shopvision, \
+  /usr/bin/systemctl start voice-service, /usr/bin/systemctl stop voice-service, /usr/bin/systemctl restart voice-service, \
+  /usr/bin/systemctl start voice-satellite, /usr/bin/systemctl stop voice-satellite, /usr/bin/systemctl restart voice-satellite, \
+  /usr/bin/systemctl start mosquitto, /usr/bin/systemctl stop mosquitto, /usr/bin/systemctl restart mosquitto, \
+  /usr/bin/systemctl start ollama, /usr/bin/systemctl stop ollama, /usr/bin/systemctl restart ollama
+<user> ALL=(root) NOPASSWD: LAB_SVC
