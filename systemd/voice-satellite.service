@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab assistant voice satellite (wake word + mic/speaker)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+# NODE: shop Pi. Edit User/WorkingDirectory; set the env file below.
+User=pi
+WorkingDirectory=/home/pi/lab-assistant
+EnvironmentFile=/etc/default/lab-voice-satellite
+ExecStart=/usr/bin/python3 shop/voice_satellite.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

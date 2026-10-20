@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab assistant bench-vision (board-aware projection)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# NODE: shop Pi. Edit User/WorkingDirectory and set MQTT_PASS.
+User=pi
+WorkingDirectory=/home/pi/lab-assistant
+Environment=MQTT_PASS=change-me
+ExecStart=/usr/bin/python3 -m shopvision.service --config config/shopvision.yaml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

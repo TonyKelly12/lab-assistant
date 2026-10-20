@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab assistant voice service (Whisper STT + Piper TTS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# NODE: Orin. Edit User/WorkingDirectory; set the env file below.
+User=orin
+WorkingDirectory=/home/orin/lab-assistant
+EnvironmentFile=/etc/default/lab-voice
+ExecStart=/usr/bin/python3 orin/voice_service.py --warm
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

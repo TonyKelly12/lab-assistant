@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab assistant brain bridge (lab/brain/request -> main-brain RAG)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# NODE: homelab (next to Hermes / the main-brain API). Set the env file below.
+User=mainbrain
+WorkingDirectory=/opt/lab-assistant
+EnvironmentFile=/etc/default/lab-brain-bridge
+ExecStart=/usr/bin/python3 homelab/brain_bridge.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

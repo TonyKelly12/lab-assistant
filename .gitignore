@@ -13,3 +13,4 @@ logs/
 # Local secrets, if you keep any next to the repo.
 .env
 *.env
+!config/*.example.env

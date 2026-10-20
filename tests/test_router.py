@@ -107,6 +107,31 @@ def test_feedback_and_brain_reply():
     assert sent[-1] == ("lab/router/reply", {"id": "abc", "text": "Pin 1 is 3V3.", "intent": "ask_brain"})
 
 
+def test_board_commands_forward_to_bench_vision():
+    router, sent, calls, _ = make_router()
+    cases = {
+        "light up column 12": "light up column 12",
+        "highlight the power rails": "highlight the power rails",
+        "find my breadboard": "find my breadboard",
+        "place the ESP32 at column 10": "place the esp32 at column 10",
+        "show row e": "show row e",
+    }
+    for text, ref in cases.items():
+        result = router.handle(text, "voice")
+        assert result["path"] == "rule", (text, result["path"])
+        assert result["decision"] == {"intent": "highlight_board", "ref": ref}, result["decision"]
+        assert ("lab/board/request", {"ref": ref, "id": result["id"]}) in sent, text
+    # the router stays quiet: bench-vision sends the spoken reply with the same id
+    assert not any(t == "lab/router/reply" for t, _ in sent)
+    assert calls == []  # rules handled it; the model was never asked
+
+
+def test_breadboard_grid_still_wins_over_board_cue():
+    router, _, _, _ = make_router()
+    result = router.handle("show me a breadboard grid", "voice")
+    assert result["decision"]["intent"] == "show_grid"
+
+
 def test_settings_override():
     s = r.settings({"devices": {"heater": []}, "ollama": {"model": "llama3.2:3b"}})
     assert s["devices"] == {"heater": []}

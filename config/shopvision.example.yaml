@@ -1,0 +1,24 @@
+# Bench-vision service config.  NODE: shop Pi.  Copy to config/shopvision.yaml.
+# Reuses the projector calibration produced by calibration/projector_calibrate.py.
+node_name: shopvision
+surface: bench
+camera_url: http://bench-cam.local:8080
+camera: bench-overhead
+render_url: http://bench-render.local:8090
+output: calibration/bench.json                 # saved calibration (H_bench_to_cam, markers, area)
+intrinsics: calibration/intrinsics-bench-overhead.json   # optional lens calibration
+board_profile:        # full | half ; leave blank to auto-pick by size
+flash: true           # briefly light the bench white for a clean snapshot
+flash_settle_s: 1.2
+
+http:
+  host: 0.0.0.0
+  port: 8070
+
+# Talk to the broker on the Orin. Put the password in MQTT_PASS, not here.
+mqtt:
+  enabled: true
+  host: orin.local
+  port: 1883
+  username: lab
+  # password: set via the MQTT_PASS environment variable

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lab assistant console (status + launch UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Edit User/WorkingDirectory (install-services.sh does this for you).
+User=tony
+WorkingDirectory=/home/tony/lab-assistant
+EnvironmentFile=-/etc/default/lab-dashboard
+ExecStart=/usr/bin/python3 -m dashboard.app --config config/dashboard.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
