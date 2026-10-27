@@ -43,10 +43,20 @@ class Bus:
         self.client.loop_start()
 
     def _on_connect(self, client, *args):
-        log.info("connected to MQTT broker")
-        self.connected.set()
-        for topic in self._subs:
-            client.subscribe(topic)
+        # paho passes the result/reason code third (after userdata, flags) in
+        # both the v1 and v2 callback signatures. Only treat success as connected
+        # - otherwise a refused connection (e.g. bad password -> code 5) was being
+        # logged as "connected" and silently retried forever.
+        rc = args[2] if len(args) >= 3 else 0
+        code = getattr(rc, "value", rc)
+        if code == 0:
+            log.info("connected to MQTT broker")
+            self.connected.set()
+            for topic in self._subs:
+                client.subscribe(topic)
+        else:
+            self.connected.clear()
+            log.error("MQTT connection refused (code %s: %s) - check username/password", code, rc)
 
     def _on_message(self, client, userdata, msg):
         for topic, handler in self._subs.items():
