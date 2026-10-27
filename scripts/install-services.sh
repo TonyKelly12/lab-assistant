@@ -107,6 +107,31 @@ if [ $CONSOLE -eq 1 ]; then
   rm -f "$tmp" 2>/dev/null || true
 fi
 
+# shop: autostart the projector kiosk in the desktop session. The render server
+# is a systemd service, but the browser that shows its page must run in the GUI
+# session on the projector's HDMI - systemd (no display) can't launch it. An XDG
+# autostart .desktop works across the Pi's desktops (LXDE / labwc / wayfire).
+if [ "$ROLE" = "shop" ] && [ "$RUN_USER" != "root" ]; then
+  USER_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+  if [ -n "$USER_HOME" ]; then
+    ad="$USER_HOME/.config/autostart"
+    install -d -o "$RUN_USER" -g "$RUN_USER" "$ad"
+    cat > "$ad/lab-kiosk.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Lab projector kiosk
+Comment=Fullscreen render page on the projector
+Exec=$REPO/render_node/kiosk.sh
+X-GNOME-Autostart-enabled=true
+EOF
+    chown "$RUN_USER:$RUN_USER" "$ad/lab-kiosk.desktop"
+    echo "   installed projector kiosk autostart: $ad/lab-kiosk.desktop"
+    echo "   * needs Desktop Autologin (raspi-config > System > Boot/Auto Login) so a GUI runs on the projector"
+    echo "   * start now without a reboot:  DISPLAY=:0 bash $REPO/render_node/kiosk.sh"
+    echo "   * wrong output/mode? edit KIOSK_OUTPUT / KIOSK_MODE in render_node/kiosk.sh (check: DISPLAY=:0 xrandr)"
+  fi
+fi
+
 echo
 echo ">> done. Status now:"
 systemctl --no-pager --plain is-active "${units[@]}" 2>/dev/null | paste -d' ' <(printf '%s\n' "${units[@]}") - || true

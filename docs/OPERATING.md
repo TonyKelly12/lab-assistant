@@ -46,9 +46,14 @@ systemctl is-active lab-router camera-node render-node shopvision
 **Calibration survives reboots** — the projector mapping is a file on disk. Re-run it
 only if the projector or camera physically moved:
 `python3 calibration/projector_calibrate.py --config config/bench.yaml --bench-only`.
-If the Chromium kiosk didn't come back on the projector, the installer can't launch a
-desktop app for you — add `@~/lab-assistant/render_node/kiosk.sh` to the Pi's desktop
-autostart, or run it once in the session.
+The projector display is a Chromium kiosk in the desktop session, not a systemd service
+(systemd has no display to draw on). `install-services.sh shop` sets up an autostart
+entry (`~/.config/autostart/lab-kiosk.desktop`) for it, so it comes up with the desktop —
+this needs **Desktop Autologin** (`raspi-config`) so a GUI session actually runs on the
+projector. To start it now without a reboot: `DISPLAY=:0 bash render_node/kiosk.sh`. If the
+projector is blank, the page just has no scene yet; if the outline is offset from the real
+board, re-run the calibration above. Wrong output/mode → edit `KIOSK_OUTPUT`/`KIOSK_MODE`
+in `render_node/kiosk.sh` (`DISPLAY=:0 xrandr` lists outputs).
 
 ## The console
 
