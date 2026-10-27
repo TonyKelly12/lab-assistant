@@ -262,10 +262,17 @@ class BenchVision:
         return f"Step {step} of {total}: {label}."
 
     def _publish_scene(self, scene):
-        if self.bus:
-            self.bus.publish(f"lab/display/{self.cfg.get('surface', 'bench')}", scene)
-        else:
+        # Draw straight to the co-located render node over HTTP - reliable and
+        # independent of the broker. Also announce on MQTT (when actually
+        # connected) for any other display/bus consumers. The broker being down
+        # or flapping never blanks the projector this way.
+        surface = self.cfg.get("surface", "bench")
+        try:
             post_json(f"{self.render_url}/scene", scene)
+        except Exception:
+            log.exception("render node HTTP post failed (%s)", self.render_url)
+        if self.bus and self.bus.connected.is_set():
+            self.bus.publish(f"lab/display/{surface}", scene)
 
     # wired in main()
     bus = None
