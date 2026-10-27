@@ -32,6 +32,7 @@ Run:  python3 shop/voice_satellite.py                 # wake-word mode
       python3 shop/voice_satellite.py --meter          # live mic level + wake score
 """
 import argparse
+import collections
 import logging
 import os
 import subprocess
@@ -55,6 +56,9 @@ CAPTURE_CHANNELS = int(os.environ.get("CAPTURE_CHANNELS", "1"))
 CHUNK = 1280                      # 80 ms at 16 kHz (openWakeWord frame size)
 SILENCE_RMS = int(os.environ.get("SILENCE_RMS", "500"))
 SILENCE_HOLD_S = float(os.environ.get("SILENCE_HOLD_S", "0.8"))
+# Audio kept from just before the wake word fires, so the start of the command
+# (often spoken right after "hey jarvis") isn't clipped.
+PREROLL_FRAMES = max(0, int(float(os.environ.get("PREROLL_S", "1.0")) * RATE / CHUNK))
 MAX_UTTER_S = float(os.environ.get("MAX_UTTER_S", "10"))
 PLAY_CMD = os.environ.get("PLAY_CMD", "aplay -q {path}")
 
@@ -134,9 +138,16 @@ def send_utterance(frames):
         log.warning("utterance post failed: %s", exc)
 
 
-def record_utterance(frames):
-    """Pull 16 kHz mono frames until ~SILENCE_HOLD_S of quiet (or MAX_UTTER_S)."""
-    out, silent, spoke = [], 0.0, False
+def record_utterance(frames, preroll=None):
+    """Pull 16 kHz mono frames until ~SILENCE_HOLD_S of quiet (or MAX_UTTER_S).
+
+    `preroll` seeds the recording with audio captured just before the wake word
+    fired, so the start of the command isn't clipped and Whisper has more to work
+    with (short, clipped clips make it hallucinate words).
+    """
+    out = list(preroll or [])
+    silent = 0.0
+    spoke = any(_rms(f) > SILENCE_RMS for f in out)
     per_chunk = CHUNK / RATE
     for frame in frames:
         out.append(frame)
@@ -209,12 +220,17 @@ def listen_loop(ptt=False):
     threshold = float(os.environ.get("WAKE_THRESHOLD", "0.5"))
     log.info("listening for '%s' (threshold %.2f, capture %d Hz %dch -> 16k mono)",
              model_name, threshold, CAPTURE_RATE, CAPTURE_CHANNELS)
+    preroll = collections.deque(maxlen=PREROLL_FRAMES) if PREROLL_FRAMES else None
     for frame in frames:
+        if preroll is not None:
+            preroll.append(frame)
         scores = oww.predict(frame)
         if any(v >= threshold for v in scores.values()):
             log.info("wake word")
             oww.reset()
-            send_utterance(record_utterance(frames))
+            send_utterance(record_utterance(frames, preroll=list(preroll) if preroll else None))
+            if preroll is not None:
+                preroll.clear()
 
 
 def play(wav_bytes):

@@ -83,7 +83,10 @@ def transcribe(wav_bytes):
         f.write(wav_bytes)
         path = f.name
     try:
-        segments, _ = whisper().transcribe(path, beam_size=1, language="en")
+        segments, _ = whisper().transcribe(
+            path, beam_size=1, language="en",
+            vad_filter=True,                     # strip silence/noise -> far fewer hallucinated words
+            condition_on_previous_text=False)
         return " ".join(s.text.strip() for s in segments).strip()
     finally:
         os.unlink(path)
