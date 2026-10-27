@@ -7,7 +7,7 @@ Wants=network-online.target
 # NODE: Orin. Edit User/WorkingDirectory; set the env file below.
 User=orin
 WorkingDirectory=/home/orin/lab-assistant
-EnvironmentFile=/etc/default/lab-voice
+EnvironmentFile=-/etc/default/voice-service
 ExecStart=/usr/bin/python3 orin/voice_service.py --warm
 Restart=on-failure
 RestartSec=3

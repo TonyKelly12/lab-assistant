@@ -7,7 +7,7 @@ Wants=network-online.target
 # NODE: homelab (next to Hermes / the main-brain API). Set the env file below.
 User=mainbrain
 WorkingDirectory=/opt/lab-assistant
-EnvironmentFile=/etc/default/lab-brain-bridge
+EnvironmentFile=-/etc/default/brain-bridge
 ExecStart=/usr/bin/python3 homelab/brain_bridge.py
 Restart=on-failure
 RestartSec=3

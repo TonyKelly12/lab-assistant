@@ -7,7 +7,7 @@ Wants=network-online.target
 # NODE: shop Pi. Edit User/WorkingDirectory; set the env file below.
 User=pi
 WorkingDirectory=/home/pi/lab-assistant
-EnvironmentFile=/etc/default/lab-voice-satellite
+EnvironmentFile=-/etc/default/voice-satellite
 ExecStart=/usr/bin/python3 shop/voice_satellite.py
 Restart=on-failure
 RestartSec=3
