@@ -22,3 +22,6 @@ mqtt:
   port: 1883
   username: lab
   # password: set via the MQTT_PASS environment variable
+
+# Voice "run calibration" shells out to the bench calibration with this config.
+# calibrate_config: config/bench.yaml
