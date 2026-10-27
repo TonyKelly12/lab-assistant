@@ -15,7 +15,9 @@ lazily so the module imports without them for a syntax check.
 
 Env:
     ORIN_URL        e.g. http://orin.local:8095   (the voice service)
-    WAKE_MODEL      openWakeWord model name/path (default "hey jarvis")
+    WAKE_MODEL      openWakeWord key or .onnx path (default "hey_jarvis";
+                    spaces are normalised, so "hey jarvis" also works)
+    WAKE_FRAMEWORK  "onnx" (default) or "tflite"
     WAKE_THRESHOLD  default 0.5
     SAT_HTTP_PORT   default 8096
     CAPTURE_RATE    mic's native rate, default 48000 (a Blue Yeti is fixed 48 kHz)
@@ -27,6 +29,7 @@ Env:
 Run:  python3 shop/voice_satellite.py                 # wake-word mode
       python3 shop/voice_satellite.py --ptt           # push-to-talk (Enter to talk)
       python3 shop/voice_satellite.py --list-devices  # find the Yeti's index
+      python3 shop/voice_satellite.py --meter          # live mic level + wake score
 """
 import argparse
 import logging
@@ -146,6 +149,50 @@ def record_utterance(frames):
     return out
 
 
+def load_wakeword():
+    """Load openWakeWord, downloading the pretrained models on first run.
+
+    openWakeWord's bundled keys use underscores ("hey_jarvis"), so a value like
+    "hey jarvis" is normalised. Returns (model, name). On a fresh box the feature
+    + pretrained models aren't present yet, so we fetch them and retry once.
+    """
+    import openwakeword
+    from openwakeword.model import Model
+    name = os.environ.get("WAKE_MODEL", "hey_jarvis").strip().replace(" ", "_")
+    framework = os.environ.get("WAKE_FRAMEWORK", "onnx")
+    try:
+        return Model(wakeword_models=[name], inference_framework=framework), name
+    except Exception as exc:  # noqa: BLE001
+        log.warning("wake model %r not ready (%s); downloading pretrained models...", name, exc)
+        try:
+            openwakeword.utils.download_models()
+        except Exception as dexc:  # noqa: BLE001
+            log.error("could not download wake models: %s", dexc)
+        return Model(wakeword_models=[name], inference_framework=framework), name
+
+
+def meter_loop():
+    """Print live mic level + wake-word score. No speaker needed: watch the
+    numbers move as you talk and see how close 'hey jarvis' gets to threshold."""
+    device = os.environ.get("MIC_DEVICE")
+    device = int(device) if device else None
+    frames = Mic(CAPTURE_RATE, CAPTURE_CHANNELS, device).frames16k()
+    try:
+        oww, name = load_wakeword()
+    except Exception as exc:  # noqa: BLE001
+        log.error("wake model failed to load: %s", exc)
+        oww, name = None, "-"
+    threshold = float(os.environ.get("WAKE_THRESHOLD", "0.5"))
+    print(f"capture {CAPTURE_RATE} Hz {CAPTURE_CHANNELS}ch -> 16k mono | "
+          f"wake '{name}' threshold {threshold}\ntalk now (Ctrl-C to stop)")
+    for frame in frames:
+        level = _rms(frame)
+        score = max(oww.predict(frame).values()) if oww else 0.0
+        bar = "#" * min(40, int(level / 200))
+        hit = "  <-- WAKE" if score >= threshold else ""
+        print(f"\rlevel {level:6.0f} |{bar:<40}| wake {score:4.2f}{hit}   ", end="", flush=True)
+
+
 def listen_loop(ptt=False):
     device = os.environ.get("MIC_DEVICE")
     device = int(device) if device else None
@@ -158,11 +205,10 @@ def listen_loop(ptt=False):
             input()
             send_utterance(record_utterance(frames))
         return
-    from openwakeword.model import Model
-    oww = Model(wakeword_models=[os.environ.get("WAKE_MODEL", "hey jarvis")])
+    oww, model_name = load_wakeword()
     threshold = float(os.environ.get("WAKE_THRESHOLD", "0.5"))
-    log.info("listening for the wake word (capture %d Hz %dch -> 16k mono)",
-             CAPTURE_RATE, CAPTURE_CHANNELS)
+    log.info("listening for '%s' (threshold %.2f, capture %d Hz %dch -> 16k mono)",
+             model_name, threshold, CAPTURE_RATE, CAPTURE_CHANNELS)
     for frame in frames:
         scores = oww.predict(frame)
         if any(v >= threshold for v in scores.values()):
@@ -210,10 +256,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ptt", action="store_true", help="push-to-talk instead of wake word")
     p.add_argument("--list-devices", action="store_true", help="print audio devices and exit")
+    p.add_argument("--meter", action="store_true", help="show live mic level + wake score, then exit")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if a.list_devices:
         list_devices()
+        return
+    if a.meter:
+        try:
+            meter_loop()
+        except KeyboardInterrupt:
+            print()
         return
 
     threading.Thread(target=listen_loop, kwargs={"ptt": a.ptt}, daemon=True).start()
