@@ -21,6 +21,7 @@ Run:  python3 -m shopvision.service --config config/shopvision.yaml [--demo]
 import argparse
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -43,6 +44,30 @@ log = logging.getLogger("shopvision")
 OUTLINE_WORDS = {"", "find", "find board", "find my board", "board", "outline",
                  "where is my board", "where's my board", "scan"}
 CLEAR_WORDS = {"clear", "clear board", "clear the board", "wipe", "reset", "blank"}
+
+# Natural-speech variants that mean "outline the whole board". Whisper transcripts
+# are messy: punctuation, case, and dropped words (e.g. "find my board" -> "my board").
+_OUTLINE_EXTRA = {"my board", "the board", "find the board", "show the board",
+                  "show me the board", "show my board", "wheres my board",
+                  "wheres the board", "where is the board", "the breadboard",
+                  "my breadboard", "find my breadboard", "find the breadboard"}
+# A specific spot on the board, so NOT a plain outline request.
+_LOCATION = re.compile(r"\b(column|col|row|hole|rail|rails|gap|[a-j]\s*\d{1,2})\b")
+
+
+def _norm_ref(ref):
+    """Lowercase, drop the punctuation Whisper adds, collapse whitespace."""
+    t = (ref or "").strip().lower()
+    t = re.sub(r"[.,!?;:\"']", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _is_outline(t):
+    """True if the normalised request means 'outline/find the board' rather than
+    a specific location on it."""
+    if t in OUTLINE_WORDS or t in _OUTLINE_EXTRA:
+        return True
+    return ("board" in t) and not _LOCATION.search(t)
 
 
 class BenchVision:
@@ -128,7 +153,7 @@ class BenchVision:
     # -- request handling ----------------------------------------------
     def handle(self, ref, request_id=None, draw=True, flash=None):
         """Resolve a reference and (optionally) project it. Returns a result dict."""
-        t = (ref or "").strip().lower()
+        t = _norm_ref(ref)
         if t in CLEAR_WORDS:
             if draw:
                 self._publish_scene({"items": []})
@@ -139,14 +164,14 @@ class BenchVision:
         if b is None:
             return {"kind": "none", "text": "I can't see a board on the bench."}
 
-        if t in OUTLINE_WORDS:
+        if _is_outline(t):
             scene = boardlib.outline_scene([b])
             text = f"Found your board, {b['size'][0]:.0f} by {b['size'][1]:.0f} millimetres."
             kind = "outline"
             resolved = None
         else:
             profile = bb.pick_profile(b, self.profile_name)
-            resolved = bb.resolve(ref, b, profile)
+            resolved = bb.resolve(t, b, profile)
             if resolved["kind"] == "unknown" or not resolved["holes"]:
                 return {"kind": "unknown", "text": f"I couldn't place '{ref}' on the board.", "board": b}
             scene = bb.holes_scene(resolved, board=b)
