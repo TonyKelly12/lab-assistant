@@ -90,6 +90,7 @@ class BenchVision:
         self.last_boards = []         # all boards from the last good find
         self.circuit_state = None     # {layout, boards, profiles, step} for step-through
         self.lock = threading.Lock()
+        self._calib_lock = threading.Lock()   # one calibration at a time
 
     # -- geometry ------------------------------------------------------
     def _cam_to_bench(self, w, h):
@@ -293,12 +294,13 @@ class BenchVision:
 
     # -- calibration ---------------------------------------------------
     def run_calibration(self):
-        """Re-run the bench projector calibration (projects markers, re-solves,
-        saves, pushes the result to the render node) and reload our own copy.
-        Blocks for up to ~3 minutes; returns a result dict."""
+        """Run a FULL projector calibration (projects the marker pattern,
+        re-solves camera->projector AND bench->camera, saves, pushes the result
+        to the render node) and reload our own copy. Full - not --bench-only -
+        so it recovers from the camera moving, not just the bench. Blocks for up
+        to ~3 minutes; returns a result dict. Call under _calib_lock."""
         cfg_path = self.cfg.get("calibrate_config", "config/bench.yaml")
-        cmd = [sys.executable, "calibration/projector_calibrate.py",
-               "--config", cfg_path, "--bench-only"]
+        cmd = [sys.executable, "calibration/projector_calibrate.py", "--config", cfg_path]
         log.info("running calibration: %s", " ".join(cmd))
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
@@ -418,14 +420,28 @@ def main():
 
     def on_calibrate(topic, payload):
         rid = payload.get("id") if isinstance(payload, dict) else None
-        try:
-            res = bv.run_calibration()
-        except Exception:
-            log.exception("calibration failed")
-            res = {"kind": "error", "text": "Something went wrong during calibration."}
-        if bv.bus and res.get("text"):
-            bv.bus.publish("lab/router/reply", {"id": rid, "text": res["text"], "intent": "calibrate"})
-        log.info("calibrate -> %s", res.get("kind"))
+        # Don't block the MQTT callback (a full run is ~10-20s) or let repeated
+        # "run calibration" stack up and fight over the camera/projector.
+        if not bv._calib_lock.acquire(blocking=False):
+            if bv.bus:
+                bv.bus.publish("lab/router/reply",
+                               {"id": rid, "text": "Calibration is already running.", "intent": "calibrate"})
+            log.info("calibrate ignored - already running")
+            return
+
+        def worker():
+            try:
+                res = bv.run_calibration()
+            except Exception:
+                log.exception("calibration failed")
+                res = {"kind": "error", "text": "Something went wrong during calibration."}
+            finally:
+                bv._calib_lock.release()
+            if bv.bus and res.get("text"):
+                bv.bus.publish("lab/router/reply", {"id": rid, "text": res["text"], "intent": "calibrate"})
+            log.info("calibrate -> %s", res.get("kind"))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     if bv.bus:
         bus.subscribe("lab/board/request", on_request)
