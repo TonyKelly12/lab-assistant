@@ -57,7 +57,7 @@ echo ">> installing units: ${units[*]}"
 for u in "${units[@]}"; do install_unit "$u"; done
 
 # env stubs (so you have a place for MQTT_PASS / DASHBOARD_KEY; never populated here)
-for f in lab-router shopvision voice-service voice-satellite brain-bridge lab-dashboard; do
+for f in lab-router shopvision render-node voice-service voice-satellite brain-bridge lab-dashboard; do
   if printf '%s\n' "${units[@]}" | grep -qx "$f" && [ ! -f "/etc/default/$f" ]; then
     printf '# Set secrets here, e.g.\n# MQTT_PASS=change-me\n' > "/etc/default/$f"
     [ "$f" = "lab-dashboard" ] && printf '# DASHBOARD_KEY=change-me\n' >> "/etc/default/$f"

@@ -10,6 +10,7 @@ Wants=network-online.target
 [Service]
 User=blackjack
 WorkingDirectory=/home/blackjack/lab-assistant
+EnvironmentFile=-/etc/default/render-node
 ExecStart=/usr/bin/python3 -m render_node.server --config config/render-node.yaml
 Restart=on-failure
 RestartSec=5

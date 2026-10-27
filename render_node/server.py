@@ -191,6 +191,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
     cfg = configlib.load(args.config)
+    if os.environ.get("MQTT_PASS") and cfg.get("mqtt"):
+        cfg["mqtt"]["password"] = os.environ["MQTT_PASS"]
     surface = cfg.get("surface", "bench")
     state = State(surface, cfg.get("projector_size", [1920, 1080]), cfg.get("calibration_file", "calibration/bench.json"))
 

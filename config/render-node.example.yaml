@@ -9,8 +9,11 @@ http:
   port: 8090
 
 mqtt:
-  enabled: false
-  host: orin.local
+  # The render node must be on the broker to receive scenes (lab/display/<surface>)
+  # from the router, bench-vision and the brain. HTTP /scene still works regardless.
+  enabled: true
+  host: orin.local            # the broker (the Orin); use its IP if .local won't resolve
   port: 1883
   username: lab
+  # password: prefer the MQTT_PASS env var (see systemd/render-node.service); or set here
   password: change-me
