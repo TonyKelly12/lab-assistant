@@ -6,6 +6,7 @@ MQTT just adds push events once the broker on the Orin exists.
 import json
 import logging
 import threading
+import uuid
 
 log = logging.getLogger("mqtt")
 
@@ -25,10 +26,13 @@ class Bus:
             if self.cfg.get("enabled"):
                 log.warning("paho-mqtt not installed; MQTT disabled")
             return
+        # Make the client id unique per process, so a leftover/duplicate
+        # instance can't collide and trigger a broker-eviction reconnect loop.
+        uid = f"{client_id}-{uuid.uuid4().hex[:6]}"
         try:
-            self.client = paho.Client(paho.CallbackAPIVersion.VERSION2, client_id=client_id)
+            self.client = paho.Client(paho.CallbackAPIVersion.VERSION2, client_id=uid)
         except AttributeError:  # paho 1.x
-            self.client = paho.Client(client_id=client_id)
+            self.client = paho.Client(client_id=uid)
         if self.cfg.get("username"):
             self.client.username_pw_set(self.cfg["username"], self.cfg.get("password"))
         self.client.on_connect = self._on_connect
@@ -64,3 +68,5 @@ class Bus:
     def publish(self, topic, payload, retain=False):
         if self.client and self.connected.is_set():
             self.client.publish(topic, json.dumps(payload), qos=0, retain=retain)
+        elif self.client:
+            log.warning("MQTT not connected; dropped publish to %s", topic)
