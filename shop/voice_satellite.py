@@ -18,12 +18,15 @@ Env:
     WAKE_MODEL      openWakeWord model name/path (default "hey jarvis")
     WAKE_THRESHOLD  default 0.5
     SAT_HTTP_PORT   default 8096
-    MIC_RATE        default 16000      MIC_DEVICE / SPK_DEVICE  optional indices
+    CAPTURE_RATE    mic's native rate, default 48000 (a Blue Yeti is fixed 48 kHz)
+    CAPTURE_CHANNELS default 1 (set 2 if the mic refuses mono, e.g. some Yetis)
+    MIC_DEVICE / SPK_DEVICE   optional device indices (see --list-devices)
     SILENCE_RMS     default 500        SILENCE_HOLD_S  default 0.8   MAX_UTTER_S 10
     PLAY_CMD        default "aplay -q {path}"
 
-Run:  python3 shop/voice_satellite.py            # wake-word mode
-      python3 shop/voice_satellite.py --ptt      # push-to-talk (Enter to talk)
+Run:  python3 shop/voice_satellite.py                 # wake-word mode
+      python3 shop/voice_satellite.py --ptt           # push-to-talk (Enter to talk)
+      python3 shop/voice_satellite.py --list-devices  # find the Yeti's index
 """
 import argparse
 import logging
@@ -39,7 +42,13 @@ from flask import Flask, jsonify, request
 log = logging.getLogger("satellite")
 
 ORIN_URL = os.environ.get("ORIN_URL", "http://orin.local:8095").rstrip("/")
-RATE = int(os.environ.get("MIC_RATE", "16000"))
+# Pipeline rate is fixed: the wake word (openWakeWord) and Whisper both require
+# 16 kHz mono. The mic may capture at a different rate - e.g. a Blue Yeti is a
+# fixed 48 kHz device and cannot hand us 16 kHz - so we capture at CAPTURE_RATE
+# and resample to 16 kHz mono in software before anything downstream sees it.
+RATE = 16000
+CAPTURE_RATE = int(os.environ.get("CAPTURE_RATE", os.environ.get("MIC_RATE", "48000")))
+CAPTURE_CHANNELS = int(os.environ.get("CAPTURE_CHANNELS", "1"))
 CHUNK = 1280                      # 80 ms at 16 kHz (openWakeWord frame size)
 SILENCE_RMS = int(os.environ.get("SILENCE_RMS", "500"))
 SILENCE_HOLD_S = float(os.environ.get("SILENCE_HOLD_S", "0.8"))
@@ -49,72 +58,117 @@ PLAY_CMD = os.environ.get("PLAY_CMD", "aplay -q {path}")
 
 def _rms(frame):
     import numpy as np
-    a = np.frombuffer(frame, dtype="int16").astype("float32")
+    a = frame.astype("float32") if hasattr(frame, "astype") else np.frombuffer(frame, dtype="int16").astype("float32")
     return float((a ** 2).mean() ** 0.5) if a.size else 0.0
 
 
 def _wav_bytes(frames):
+    """frames: a list of 16 kHz mono int16 ndarrays (or raw bytes)."""
     import io
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(RATE)
-        wf.writeframes(b"".join(frames))
+        wf.writeframes(b"".join(f.tobytes() if hasattr(f, "tobytes") else f for f in frames))
     return buf.getvalue()
+
+
+class Mic:
+    """Opens the capture device at its native rate and yields a clean stream of
+    16 kHz mono int16 frames of CHUNK samples, resampling/downmixing as needed.
+
+    Capturing at the device's real rate (CAPTURE_RATE, 48 kHz for a Yeti) and
+    resampling here means the mic's fixed rate never has to match the pipeline.
+    """
+
+    def __init__(self, capture_rate=CAPTURE_RATE, channels=CAPTURE_CHANNELS, device=None):
+        import numpy as np
+        self.np = np
+        self.capture_rate = capture_rate
+        self.channels = channels
+        self.device = device
+        self.read_block = max(CHUNK, int(round(CHUNK * capture_rate / RATE)))
+        self._buf = np.zeros(0, dtype=np.float32)
+
+    def _to_16k_mono(self, block):
+        np = self.np
+        a = block.astype(np.float32)
+        if a.ndim == 2 and a.shape[1] > 1:   # downmix stereo -> mono
+            a = a.mean(axis=1)
+        else:
+            a = a.reshape(-1)
+        if self.capture_rate == RATE:
+            return a
+        n = a.shape[0]
+        m = int(round(n * RATE / self.capture_rate))
+        if m <= 0:
+            return np.zeros(0, dtype=np.float32)
+        return np.interp(np.linspace(0, n - 1, m), np.arange(n), a)
+
+    def frames16k(self):
+        import sounddevice as sd
+        np = self.np
+        with sd.InputStream(samplerate=self.capture_rate, channels=self.channels,
+                            dtype="int16", blocksize=self.read_block, device=self.device) as stream:
+            while True:
+                block, _ = stream.read(self.read_block)
+                self._buf = np.concatenate([self._buf, self._to_16k_mono(block)])
+                while self._buf.shape[0] >= CHUNK:
+                    out, self._buf = self._buf[:CHUNK], self._buf[CHUNK:]
+                    yield np.clip(out, -32768, 32767).astype(np.int16)
 
 
 def send_utterance(frames):
     wav = _wav_bytes(frames)
+    samples = sum(len(f) for f in frames)
     req = urllib.request.Request(f"{ORIN_URL}/utterance", data=wav,
                                  headers={"Content-Type": "audio/wav"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            log.info("sent %d ms -> %s", int(1000 * len(frames) * CHUNK / RATE), r.read()[:200])
+            log.info("sent %d ms -> %s", int(1000 * samples / RATE), r.read()[:200])
     except Exception as exc:  # noqa: BLE001
         log.warning("utterance post failed: %s", exc)
 
 
-def record_utterance(stream):
-    """Record from an open input stream until ~SILENCE_HOLD_S of quiet."""
-    frames, silent, spoke = [], 0.0, False
+def record_utterance(frames):
+    """Pull 16 kHz mono frames until ~SILENCE_HOLD_S of quiet (or MAX_UTTER_S)."""
+    out, silent, spoke = [], 0.0, False
     per_chunk = CHUNK / RATE
-    while len(frames) * per_chunk < MAX_UTTER_S:
-        frame = stream.read(CHUNK)[0].tobytes()
-        frames.append(frame)
+    for frame in frames:
+        out.append(frame)
         if _rms(frame) > SILENCE_RMS:
             spoke, silent = True, 0.0
         else:
             silent += per_chunk
-        if spoke and silent >= SILENCE_HOLD_S:
+        if (spoke and silent >= SILENCE_HOLD_S) or len(out) * per_chunk >= MAX_UTTER_S:
             break
-    return frames
+    return out
 
 
 def listen_loop(ptt=False):
-    import sounddevice as sd
     device = os.environ.get("MIC_DEVICE")
     device = int(device) if device else None
-    with sd.RawInputStream(samplerate=RATE, blocksize=CHUNK, dtype="int16",
-                           channels=1, device=device) as stream:
-        if ptt:
-            log.info("push-to-talk: press Enter to talk")
-            while True:
-                input()
-                send_utterance(record_utterance(stream))
-            return
-        from openwakeword.model import Model
-        oww = Model(wakeword_models=[os.environ.get("WAKE_MODEL", "hey jarvis")])
-        threshold = float(os.environ.get("WAKE_THRESHOLD", "0.5"))
-        log.info("listening for the wake word")
-        import numpy as np
+    mic = Mic(CAPTURE_RATE, CAPTURE_CHANNELS, device)
+    frames = mic.frames16k()      # one stateful stream; the recorder pulls from it too
+    if ptt:
+        log.info("push-to-talk: press Enter to talk (capture %d Hz %dch -> 16k mono)",
+                 CAPTURE_RATE, CAPTURE_CHANNELS)
         while True:
-            frame = stream.read(CHUNK)[0].tobytes()
-            scores = oww.predict(np.frombuffer(frame, dtype="int16"))
-            if any(v >= threshold for v in scores.values()):
-                log.info("wake word")
-                oww.reset()
-                send_utterance(record_utterance(stream))
+            input()
+            send_utterance(record_utterance(frames))
+        return
+    from openwakeword.model import Model
+    oww = Model(wakeword_models=[os.environ.get("WAKE_MODEL", "hey jarvis")])
+    threshold = float(os.environ.get("WAKE_THRESHOLD", "0.5"))
+    log.info("listening for the wake word (capture %d Hz %dch -> 16k mono)",
+             CAPTURE_RATE, CAPTURE_CHANNELS)
+    for frame in frames:
+        scores = oww.predict(frame)
+        if any(v >= threshold for v in scores.values()):
+            log.info("wake word")
+            oww.reset()
+            send_utterance(record_utterance(frames))
 
 
 def play(wav_bytes):
@@ -145,11 +199,22 @@ def create_app():
     return app
 
 
+def list_devices():
+    import sounddevice as sd
+    print(sd.query_devices())
+    print("\nSet MIC_DEVICE / SPK_DEVICE to the index of the input/output you want.")
+    print(f"Capture is {CAPTURE_RATE} Hz, {CAPTURE_CHANNELS} ch -> resampled to 16 kHz mono.")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ptt", action="store_true", help="push-to-talk instead of wake word")
+    p.add_argument("--list-devices", action="store_true", help="print audio devices and exit")
     a = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if a.list_devices:
+        list_devices()
+        return
 
     threading.Thread(target=listen_loop, kwargs={"ptt": a.ptt}, daemon=True).start()
     port = int(os.environ.get("SAT_HTTP_PORT", "8096"))
