@@ -252,7 +252,11 @@ class BenchVision:
             noun = "breadboard" if need == 1 else "breadboards"
             return {"kind": "none",
                     "text": f"That layout needs {need} {noun}; I can see {len(boards)}."}
-        boards = boards[:need]
+        # Use the largest `need` board(s) so a small spurious detection (a
+        # reflection, a rail strip) can't be picked over the real breadboard,
+        # then order them left-to-right so a layout's board indices are stable.
+        boards = sorted(boards, key=lambda b: max(b["size"]), reverse=True)[:need]
+        boards = sorted(boards, key=lambda b: (round(b["center"][0], 0), round(b["center"][1], 0)))
         profiles = cktlib.profiles_for(boards, layout, name=self.profile_name)
         problems = cktlib.validate(layout, boards, profiles)
         if problems:
