@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -290,6 +291,32 @@ class BenchVision:
         label = w.get("label") or str(w.get("net", "wire"))
         return f"Step {step} of {total}: {label}."
 
+    # -- calibration ---------------------------------------------------
+    def run_calibration(self):
+        """Re-run the bench projector calibration (projects markers, re-solves,
+        saves, pushes the result to the render node) and reload our own copy.
+        Blocks for up to ~3 minutes; returns a result dict."""
+        cfg_path = self.cfg.get("calibrate_config", "config/bench.yaml")
+        cmd = [sys.executable, "calibration/projector_calibrate.py",
+               "--config", cfg_path, "--bench-only"]
+        log.info("running calibration: %s", " ".join(cmd))
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return {"kind": "error", "text": "Calibration timed out."}
+        if proc.returncode != 0:
+            log.warning("calibration failed (rc=%s): %s", proc.returncode, (proc.stderr or "")[-800:])
+            return {"kind": "error",
+                    "text": "Calibration failed - make sure the bench markers are visible and uncovered."}
+        calib_path = self.cfg.get("output", "calibration/bench.json")
+        try:
+            if os.path.exists(calib_path):
+                self.calib = load_json(calib_path)
+        except Exception:  # noqa: BLE001
+            log.exception("could not reload calibration after run")
+        log.info("calibration complete")
+        return {"kind": "calibrate", "text": "Calibration complete."}
+
     def _publish_scene(self, scene):
         # Draw straight to the co-located render node over HTTP - reliable and
         # independent of the broker. Also announce on MQTT (when actually
@@ -389,10 +416,22 @@ def main():
         log.info("circuit request %r -> %s",
                  spec.get("name") or spec.get("query") or spec.get("action"), res.get("kind"))
 
+    def on_calibrate(topic, payload):
+        rid = payload.get("id") if isinstance(payload, dict) else None
+        try:
+            res = bv.run_calibration()
+        except Exception:
+            log.exception("calibration failed")
+            res = {"kind": "error", "text": "Something went wrong during calibration."}
+        if bv.bus and res.get("text"):
+            bv.bus.publish("lab/router/reply", {"id": rid, "text": res["text"], "intent": "calibrate"})
+        log.info("calibrate -> %s", res.get("kind"))
+
     if bv.bus:
         bus.subscribe("lab/board/request", on_request)
         bus.subscribe("lab/board/circuit", on_circuit)
-        log.info("listening on lab/board/request and lab/board/circuit")
+        bus.subscribe("lab/board/calibrate", on_calibrate)
+        log.info("listening on lab/board/request, lab/board/circuit and lab/board/calibrate")
     else:
         log.warning("MQTT disabled; HTTP /board and /circuit only")
 

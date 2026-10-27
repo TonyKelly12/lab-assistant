@@ -48,7 +48,7 @@ from labassist.mqtt import Bus  # noqa: E402
 log = logging.getLogger("router")
 
 INTENTS = ["show_text", "show_grid", "clear_bench", "set_device",
-           "highlight_board", "show_circuit", "ask_brain"]
+           "highlight_board", "show_circuit", "calibrate", "ask_brain"]
 
 
 # ------------------------------------------------------------------ settings
@@ -144,6 +144,8 @@ def board_ref(text):
 _CIRCUIT = re.compile(
     r"\b(?:wire(?:\s+up)?|hook(?:\s+up)?|build|lay\s*out|"
     r"show\s+me\s+how\s+to\s+(?:wire|hook|connect|build|make))\b")
+# Re-run the projector calibration.
+_CALIBRATE = re.compile(r"\b(?:re)?calibrat(?:e|ion|ing)\b")
 # Step-through of the circuit already on the bench.
 _NEXT = re.compile(r"^(?:next(?:\s+(?:step|wire|one))?|continue|go\s+on|and\s+then)\s*$")
 _PREV = re.compile(r"^(?:back|previous|prev|undo|step\s+back|go\s+back)\s*$")
@@ -170,6 +172,8 @@ def rule_decision(text, s):
         return {"intent": "show_circuit", "action": "prev"}
     if _ALL.match(text):
         return {"intent": "show_circuit", "action": "all"}
+    if _CALIBRATE.search(text):
+        return {"intent": "calibrate"}
     if _CIRCUIT.search(text):
         return {"intent": "show_circuit", "query": text}
     ref = board_ref(text)
@@ -223,6 +227,8 @@ Reply with JSON only, using exactly one intent:
   they can follow it - "wire up / hook up / build / show me how to connect ...".
   Fields: query (the request, unchanged). For stepping a circuit already drawn,
   use action: "next", "prev" or "all" with no query.
+- calibrate: re-run the projector calibration ("run calibration",
+  "recalibrate", "calibrate the bench"). No fields.
 - ask_brain: anything else - questions, explanations, datasheets, pinouts,
   debugging help, or anything you are unsure about. Fields: text (the request, unchanged).
 
@@ -232,6 +238,7 @@ go") is highlight_board; a whole working circuit ("wire an ESP32 to an LED") is
 show_circuit.
 
 Examples:
+"run calibration" -> {{"intent": "calibrate"}}
 "wire up an ESP32 to an LED" -> {{"intent": "show_circuit", "query": "wire up an ESP32 to an LED"}}
 "show me how to connect a voltage divider" -> {{"intent": "show_circuit", "query": "show me how to connect a voltage divider"}}
 "next" -> {{"intent": "show_circuit", "action": "next"}}
@@ -301,6 +308,8 @@ def clean(decision, original_text, s):
         if d.get("step"):
             out["step"] = True
         return out
+    elif intent == "calibrate":
+        return out
     elif intent == "show_grid":
         cols, rows = s["grid_default"]
         try:
@@ -352,6 +361,10 @@ def actions_for(decision, request_id, original_text, source, s):
             if decision.get(k):
                 spec[k] = decision[k]
         return [("lab/board/circuit", spec)], ""
+    if intent == "calibrate":
+        # bench-vision runs the calibration (projects markers, re-solves) and
+        # replies when done. Give an immediate ack since it takes a few seconds.
+        return [("lab/board/calibrate", {"id": request_id})], "Starting calibration - hold still."
     # ask_brain
     return ([("lab/brain/request", {"id": request_id, "text": decision.get("text", original_text),
                                     "source": source})],
