@@ -90,10 +90,16 @@ def transcribe(wav_bytes):
 
 
 def synthesize(text):
-    """Return WAV bytes for `text` using Piper."""
+    """Return WAV bytes for `text` using Piper, or None if TTS isn't available
+    (piper-tts not installed, or no voice model configured)."""
+    try:
+        voice = piper()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("TTS unavailable (%s); skipping spoken reply", exc)
+        return None
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
-        piper().synthesize(text, wf)
+        voice.synthesize(text, wf)
     return buf.getvalue()
 
 
@@ -158,7 +164,9 @@ def on_reply(topic, payload):
     if not text or not _is_ours(rid):
         return
     try:
-        push_to_satellite(synthesize(text))
+        wav = synthesize(text)
+        if wav:
+            push_to_satellite(wav)
     except Exception:  # noqa: BLE001
         log.exception("speak failed")
 
