@@ -1,0 +1,29 @@
+{
+  "name": "esp32-led-blink",
+  "title": "ESP32 + LED blink",
+  "aliases": ["esp32 led", "blink", "led", "esp32 blink", "blinky"],
+  "summary": "Drive a single LED from an ESP32 GPIO through a current-limiting resistor.",
+  "board": "half",
+  "boards": 1,
+  "components": [
+    {"ref": "U1", "part": "ESP32-S3 devkit", "span": [1, 16], "rows": ["a", "j"],
+     "note": "straddles the centre gap; USB facing left. Pin columns below are a template - nudge to match your exact board.",
+     "pins": [
+       {"name": "3V3", "col": 7, "row": "j"},
+       {"name": "GND", "col": 9, "row": "j"},
+       {"name": "GPIO2", "col": 8, "row": "j"}
+     ]},
+    {"ref": "R1", "part": "330R resistor", "pins": [
+       {"name": "a", "col": 20, "row": "j"},
+       {"name": "b", "col": 24, "row": "j"}
+    ]},
+    {"ref": "D1", "part": "LED", "note": "anode (long leg) toward the resistor", "pins": [
+       {"name": "anode", "col": 24, "row": "i"},
+       {"name": "cathode", "col": 26, "row": "i"}
+    ]}
+  ],
+  "wires": [
+    {"from": {"col": 8, "row": "j"}, "to": {"col": 20, "row": "j"}, "net": "signal", "label": "GPIO2 -> R1"},
+    {"from": {"col": 26, "row": "i"}, "to": {"col": 9, "row": "j"}, "net": "gnd", "label": "LED -> GND"}
+  ]
+}
