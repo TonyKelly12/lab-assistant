@@ -32,6 +32,7 @@ from flask import Flask, jsonify, request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from labassist import board as boardlib        # noqa: E402
 from labassist import breadboard as bb          # noqa: E402
+from labassist import circuit as cktlib         # noqa: E402
 from labassist import config as configlib       # noqa: E402
 from labassist.geometry import load_json, scale_intrinsics  # noqa: E402
 from labassist.mqtt import Bus                   # noqa: E402
@@ -59,7 +60,9 @@ class BenchVision:
             raise SystemExit(f"no calibration at {calib_path}; run projector_calibrate.py first")
         self.calib = load_json(calib_path)
         self.intrinsics_path = cfg.get("intrinsics")
-        self.last_board = None       # cached good pose for --demo fallback
+        self.last_board = None        # cached good pose for --demo fallback
+        self.last_boards = []         # all boards from the last good find
+        self.circuit_state = None     # {layout, boards, profiles, step} for step-through
         self.lock = threading.Lock()
 
     # -- geometry ------------------------------------------------------
@@ -91,8 +94,10 @@ class BenchVision:
                     pass
         return img
 
-    def find_board(self, flash=None):
-        """Return the largest board (bench mm) or the cached one in --demo mode."""
+    def find_all(self, flash=None):
+        """Return every detected board (bench mm), ordered left-to-right then
+        front-to-back so a layout's board indices map stably. In --demo mode,
+        fall back to the last good find."""
         img = self.snapshot(flash)
         h, w = img.shape[:2]
         H_cb = self._cam_to_bench(w, h)
@@ -103,13 +108,22 @@ class BenchVision:
         markers = [tuple(v) for v in (self.calib.get("bench_markers") or {}).values()]
         mask = boardlib.bench_mask(img.shape, H_cb, area, exclude_mm=markers)
         found, _ = boardlib.find_boards(img, H_cb, mask, intr)
+        found = sorted(found, key=lambda b: (round(b["center"][0], 0), round(b["center"][1], 0)))
         if found:
+            self.last_boards = found
             self.last_board = found[0]
-            return found[0]
-        if self.demo and self.last_board:
-            log.warning("no board found; using cached pose (--demo)")
-            return self.last_board
-        return None
+            return found
+        if self.demo and self.last_boards:
+            log.warning("no board found; using cached pose(s) (--demo)")
+            return self.last_boards
+        return []
+
+    def find_board(self, flash=None):
+        """Return the largest board (bench mm) or the cached one in --demo mode."""
+        boards = self.find_all(flash)
+        if not boards:
+            return None
+        return max(boards, key=lambda b: max(b["size"]))
 
     # -- request handling ----------------------------------------------
     def handle(self, ref, request_id=None, draw=True, flash=None):
@@ -165,6 +179,88 @@ class BenchVision:
             return "The centre gap."
         return resolved["label"]
 
+    # -- circuit layouts -----------------------------------------------
+    def handle_circuit(self, spec, request_id=None, draw=True, flash=None):
+        """Project a full wiring layout onto the real holes, or step through one.
+
+        spec: {"query"|"name": str, "step": bool?, "action": "next"|"prev"|"all"?}
+        """
+        action = str(spec.get("action", "")).strip().lower()
+        if action in ("next", "prev", "back", "all", "step"):
+            st = self.circuit_state
+            if not st:
+                return {"kind": "none", "text": "No circuit is up yet - ask me to wire one first."}
+            total = len(st["layout"].get("wires", []))
+            step = st["step"]
+            if action in ("next", "step"):
+                step = min(step + 1, total)
+            elif action in ("prev", "back"):
+                step = max(step - 1, 0)
+            else:  # all
+                step = total
+            st["step"] = step
+            scene = cktlib.render_circuit(st["layout"], st["boards"], st["profiles"], steps=step)
+            if draw:
+                self._publish_scene(scene)
+            return {"kind": "circuit", "text": self._say_circuit(st["layout"], step, total),
+                    "scene": scene, "step": step, "steps": total}
+
+        # new circuit: resolve name first, else best-effort match the request
+        layout = None
+        name = str(spec.get("name", "")).strip()
+        query = str(spec.get("query", "")).strip()
+        if name:
+            try:
+                layout = cktlib.load_circuit(name)
+            except FileNotFoundError:
+                layout = None
+        if layout is None and query:
+            layout = cktlib.find_circuit(query)
+        if layout is None:
+            return {"kind": "unknown",
+                    "text": "I don't have a circuit for that one yet. Try 'wire up an ESP32 to an LED'."}
+
+        with self.lock:
+            boards = self.find_all(flash)
+        need = int(layout.get("boards", 1))
+        if len(boards) < need:
+            noun = "breadboard" if need == 1 else "breadboards"
+            return {"kind": "none",
+                    "text": f"That layout needs {need} {noun}; I can see {len(boards)}."}
+        boards = boards[:need]
+        profiles = cktlib.profiles_for(boards, layout, name=self.profile_name)
+        problems = cktlib.validate(layout, boards, profiles)
+        if problems:
+            log.warning("circuit %s doesn't fit: %s", layout.get("name"), problems)
+            return {"kind": "invalid",
+                    "text": "That layout doesn't fit the board I see - check the board size or profile."}
+
+        total = len(layout.get("wires", []))
+        stepped = bool(spec.get("step"))
+        step = 1 if (stepped and total) else total
+        self.circuit_state = {"layout": layout, "boards": boards, "profiles": profiles, "step": step}
+        scene = cktlib.render_circuit(layout, boards, profiles, steps=step)
+        if draw:
+            self._publish_scene(scene)
+        if stepped:
+            text = self._say_circuit(layout, step, total)
+        else:
+            s = "s" if total != 1 else ""
+            title = layout.get("title") or layout.get("name")
+            text = (f"{title}: {total} connection{s}. Components in violet, wires colour-coded. "
+                    f"Say 'next' to step through, or 'clear the board' when you're done.")
+        return {"kind": "circuit", "text": text, "scene": scene, "step": step, "steps": total}
+
+    @staticmethod
+    def _say_circuit(layout, step, total):
+        title = layout.get("title") or layout.get("name") or "Circuit"
+        if step <= 0:
+            return f"{title}: components placed. Say 'next' for the first wire."
+        wires = layout.get("wires", [])
+        w = wires[step - 1] if 0 < step <= len(wires) else {}
+        label = w.get("label") or str(w.get("net", "wire"))
+        return f"Step {step} of {total}: {label}."
+
     def _publish_scene(self, scene):
         if self.bus:
             self.bus.publish(f"lab/display/{self.cfg.get('surface', 'bench')}", scene)
@@ -194,6 +290,22 @@ def create_app(bv):
         except Exception as exc:
             return jsonify(ok=False, error=str(exc)), 503
         return jsonify(ok=True, **res)
+
+    @app.get("/circuit")
+    def circuit_debug():
+        spec = {k: request.args.get(k) for k in ("name", "query", "action") if request.args.get(k)}
+        if request.args.get("step") in ("1", "true", "yes"):
+            spec["step"] = True
+        draw = request.args.get("draw", "0") in ("1", "true", "yes")
+        try:
+            res = bv.handle_circuit(spec, draw=draw)
+        except Exception as exc:
+            return jsonify(ok=False, error=str(exc)), 503
+        return jsonify(ok=True, **res)
+
+    @app.get("/circuits")
+    def circuits_list():
+        return jsonify(ok=True, circuits=cktlib.list_circuits())
 
     return app
 
@@ -228,11 +340,25 @@ def main():
             bv.bus.publish("lab/router/reply", {"id": rid, "text": res["text"], "intent": "highlight_board"})
         log.info("board request %r -> %s", ref, res.get("kind"))
 
+    def on_circuit(topic, payload):
+        spec = payload if isinstance(payload, dict) else {"query": str(payload or "")}
+        rid = spec.get("id")
+        try:
+            res = bv.handle_circuit(spec, request_id=rid, draw=True, flash=spec.get("flash"))
+        except Exception:
+            log.exception("circuit request failed")
+            res = {"kind": "error", "text": "Something went wrong drawing that circuit."}
+        if bv.bus and res.get("text"):
+            bv.bus.publish("lab/router/reply", {"id": rid, "text": res["text"], "intent": "show_circuit"})
+        log.info("circuit request %r -> %s",
+                 spec.get("name") or spec.get("query") or spec.get("action"), res.get("kind"))
+
     if bv.bus:
         bus.subscribe("lab/board/request", on_request)
-        log.info("listening on lab/board/request")
+        bus.subscribe("lab/board/circuit", on_circuit)
+        log.info("listening on lab/board/request and lab/board/circuit")
     else:
-        log.warning("MQTT disabled; HTTP /board only")
+        log.warning("MQTT disabled; HTTP /board and /circuit only")
 
     http = cfg.get("http", {})
     create_app(bv).run(host=http.get("host", "0.0.0.0"), port=int(http.get("port", 8070)), threaded=True)

@@ -1,0 +1,23 @@
+{
+  "name": "voltage-divider",
+  "title": "Voltage divider",
+  "aliases": ["divider", "resistor divider", "vout", "potential divider"],
+  "summary": "Two resistors in series from Vin to GND; the midpoint taps a lower voltage.",
+  "board": "half",
+  "boards": 1,
+  "components": [
+    {"ref": "R1", "part": "R1 (top)", "pins": [
+       {"name": "vin", "col": 3, "row": "j"},
+       {"name": "mid", "col": 10, "row": "j"}
+    ]},
+    {"ref": "R2", "part": "R2 (bottom)", "pins": [
+       {"name": "mid", "col": 10, "row": "i"},
+       {"name": "gnd", "col": 16, "row": "i"}
+    ]}
+  ],
+  "wires": [
+    {"from": {"col": 3, "row": "j"}, "to": {"col": 1, "row": "j"}, "net": "vcc", "label": "Vin"},
+    {"from": {"col": 16, "row": "i"}, "to": {"col": 18, "row": "i"}, "net": "gnd", "label": "GND"},
+    {"from": {"col": 10, "row": "h"}, "to": {"col": 24, "row": "h"}, "net": "signal", "label": "Vout tap"}
+  ]
+}

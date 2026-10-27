@@ -47,7 +47,8 @@ from labassist.mqtt import Bus  # noqa: E402
 
 log = logging.getLogger("router")
 
-INTENTS = ["show_text", "show_grid", "clear_bench", "set_device", "highlight_board", "ask_brain"]
+INTENTS = ["show_text", "show_grid", "clear_bench", "set_device",
+           "highlight_board", "show_circuit", "ask_brain"]
 
 
 # ------------------------------------------------------------------ settings
@@ -138,6 +139,18 @@ def board_ref(text):
     return text if any(p.search(text) for p in _BOARD_CUES) else None
 
 
+# Circuit layouts: "wire up / hook up / build / show me how to connect ...".
+# bench-vision picks the circuit from the library and projects it on the holes.
+_CIRCUIT = re.compile(
+    r"\b(?:wire(?:\s+up)?|hook(?:\s+up)?|build|lay\s*out|"
+    r"show\s+me\s+how\s+to\s+(?:wire|hook|connect|build|make))\b")
+# Step-through of the circuit already on the bench.
+_NEXT = re.compile(r"^(?:next(?:\s+(?:step|wire|one))?|continue|go\s+on|and\s+then)\s*$")
+_PREV = re.compile(r"^(?:back|previous|prev|undo|step\s+back|go\s+back)\s*$")
+_ALL = re.compile(r"^(?:show\s+(?:all|everything|the\s+whole\s+thing)|"
+                  r"all\s+(?:wires|steps|at\s+once)|full\s+circuit|everything)\s*$")
+
+
 def rule_decision(text, s):
     m = _CLEAR.match(text)
     if m:
@@ -151,6 +164,14 @@ def rule_decision(text, s):
     m = _TEXT.match(text)
     if m:
         return {"intent": "show_text", "text": m.group(1).strip("'\" ")}
+    if _NEXT.match(text):
+        return {"intent": "show_circuit", "action": "next"}
+    if _PREV.match(text):
+        return {"intent": "show_circuit", "action": "prev"}
+    if _ALL.match(text):
+        return {"intent": "show_circuit", "action": "all"}
+    if _CIRCUIT.search(text):
+        return {"intent": "show_circuit", "query": text}
     ref = board_ref(text)
     if ref:
         return {"intent": "highlight_board", "ref": ref}
@@ -176,6 +197,8 @@ def build_schema(s):
         "state": {"type": "string", "enum": ["on", "off"]},
         "cols": {"type": "integer"},
         "rows": {"type": "integer"},
+        "query": {"type": "string"},
+        "action": {"type": "string", "enum": ["next", "prev", "all"]},
         "surface": {"type": "string", "enum": list(s["surfaces"])},
     }
     if s["devices"]:
@@ -196,12 +219,23 @@ Reply with JSON only, using exactly one intent:
 - highlight_board: anything about the breadboard on the bench - finding it, or
   lighting up a column, a row, a hole, the power rails, or where a part goes.
   Fields: ref (the request, unchanged - the bench service parses it).
+- show_circuit: the user wants a full wiring layout projected onto the board so
+  they can follow it - "wire up / hook up / build / show me how to connect ...".
+  Fields: query (the request, unchanged). For stepping a circuit already drawn,
+  use action: "next", "prev" or "all" with no query.
 - ask_brain: anything else - questions, explanations, datasheets, pinouts,
   debugging help, or anything you are unsure about. Fields: text (the request, unchanged).
 
 Never invent a device that is not in the list; use ask_brain instead.
+A single named spot on the board ("light up column 12", "where does the ESP32
+go") is highlight_board; a whole working circuit ("wire an ESP32 to an LED") is
+show_circuit.
 
 Examples:
+"wire up an ESP32 to an LED" -> {{"intent": "show_circuit", "query": "wire up an ESP32 to an LED"}}
+"show me how to connect a voltage divider" -> {{"intent": "show_circuit", "query": "show me how to connect a voltage divider"}}
+"next" -> {{"intent": "show_circuit", "action": "next"}}
+"show the whole thing" -> {{"intent": "show_circuit", "action": "all"}}
 "put the word solder here on the bench" -> {{"intent": "show_text", "text": "solder"}}
 "get rid of the fumes" -> {{"intent": "set_device", "device": "exhaust", "state": "on"}}
 "I need a twenty by five hole grid" -> {{"intent": "show_grid", "cols": 20, "rows": 5}}
@@ -258,6 +292,15 @@ def clean(decision, original_text, s):
     elif intent == "highlight_board" and str(d.get("ref", "")).strip():
         out["ref"] = str(d["ref"]).strip()[:120]
         return out
+    elif intent == "show_circuit":
+        if d.get("action") in ("next", "prev", "back", "all", "step"):
+            out["action"] = d["action"]
+            return out
+        q = str(d.get("query") or d.get("text") or "").strip() or original_text
+        out["query"] = q[:160]
+        if d.get("step"):
+            out["step"] = True
+        return out
     elif intent == "show_grid":
         cols, rows = s["grid_default"]
         try:
@@ -301,6 +344,14 @@ def actions_for(decision, request_id, original_text, source, s):
         # bench-vision does the drawing and sends the spoken reply (same id),
         # so the router stays quiet here (empty reply -> not published).
         return [("lab/board/request", {"ref": decision.get("ref", original_text), "id": request_id})], ""
+    if intent == "show_circuit":
+        # bench-vision resolves the circuit, finds the board(s), projects the
+        # plan and sends the spoken reply (same id). Router stays quiet.
+        spec = {"id": request_id}
+        for k in ("action", "query", "step"):
+            if decision.get(k):
+                spec[k] = decision[k]
+        return [("lab/board/circuit", spec)], ""
     # ask_brain
     return ([("lab/brain/request", {"id": request_id, "text": decision.get("text", original_text),
                                     "source": source})],

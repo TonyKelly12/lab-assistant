@@ -1,0 +1,26 @@
+{
+  "name": "esp32-sensor-2board",
+  "title": "ESP32 + sensor across two boards",
+  "aliases": ["two board", "2 board", "sensor", "second breadboard", "across boards"],
+  "summary": "ESP32 on board 1, a 3-pin sensor on board 2, three jumpers crossing the gap. Demonstrates a layout spanning two detected boards.",
+  "board": "half",
+  "boards": 2,
+  "components": [
+    {"ref": "U1", "part": "ESP32-S3 devkit", "board": 0, "span": [1, 16], "rows": ["a", "j"],
+     "pins": [
+       {"name": "3V3", "col": 7, "row": "j"},
+       {"name": "GND", "col": 9, "row": "j"},
+       {"name": "GPIO4", "col": 8, "row": "j"}
+    ]},
+    {"ref": "S1", "part": "3-pin sensor", "board": 1, "pins": [
+       {"name": "VCC", "board": 1, "col": 3, "row": "j"},
+       {"name": "GND", "board": 1, "col": 4, "row": "j"},
+       {"name": "DATA", "board": 1, "col": 5, "row": "j"}
+    ]}
+  ],
+  "wires": [
+    {"from": {"board": 0, "col": 7, "row": "j"}, "to": {"board": 1, "col": 3, "row": "j"}, "net": "vcc", "label": "3V3"},
+    {"from": {"board": 0, "col": 9, "row": "j"}, "to": {"board": 1, "col": 4, "row": "j"}, "net": "gnd", "label": "GND"},
+    {"from": {"board": 0, "col": 8, "row": "j"}, "to": {"board": 1, "col": 5, "row": "j"}, "net": "data", "label": "GPIO4 -> DATA"}
+  ]
+}
