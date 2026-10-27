@@ -8,6 +8,7 @@ Wants=network-online.target
 User=pi
 WorkingDirectory=/home/pi/lab-assistant
 Environment=MQTT_PASS=change-me
+EnvironmentFile=-/etc/default/shopvision
 ExecStart=/usr/bin/python3 -m shopvision.service --config config/shopvision.yaml
 Restart=on-failure
 RestartSec=3
