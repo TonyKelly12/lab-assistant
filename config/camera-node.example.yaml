@@ -31,3 +31,19 @@ cameras:
                             # (not /dev/video0 on a Pi with a ribbon camera: that one is the ribbon camera)
     size: [1920, 1080]      # largest size from: v4l2-ctl -d /dev/video0 --list-formats-ext
     track: false            # snapshots on request only
+
+  # Inspection camera for component ID (the LG 1080p webcam on an arm). Point it
+  # at a held-up part; the vision bridge pulls /snapshot/inspect.jpg on request.
+  # Not tied to the bench calibration - it only ever takes on-request photos.
+  inspect:
+    enabled: false          # set true once the webcam shows up in v4l2-ctl --list-devices
+    type: usb
+    device: /dev/video2     # its /dev/videoN from: v4l2-ctl --list-devices
+                            # (ribbon cam is video0; the TOMLOV, if present, takes another)
+    size: [1920, 1080]
+    track: false            # on-request snapshots only (no motion/marker tracking)
+    controls:               # optional V4L2 controls; omit any your webcam ignores
+      autofocus: 1          # 1 = let it autofocus (good for an arm you reposition)
+      # focus: 30           # or set autofocus: 0 and a fixed focus for a repeatable
+      #                     # working distance (value range is webcam-specific)
+      # zoom: 100

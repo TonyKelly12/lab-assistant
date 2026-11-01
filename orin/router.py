@@ -48,7 +48,10 @@ from labassist.mqtt import Bus  # noqa: E402
 log = logging.getLogger("router")
 
 INTENTS = ["show_text", "show_grid", "clear_bench", "set_device",
-           "highlight_board", "show_circuit", "calibrate", "ask_brain"]
+           "highlight_board", "show_circuit", "calibrate", "identify", "ask_brain"]
+
+# Component-identification modes for the inspection camera (the vision bridge).
+IDENTIFY_MODES = ["general", "markings", "resistor"]
 
 
 # ------------------------------------------------------------------ settings
@@ -139,6 +142,39 @@ def board_ref(text):
     return text if any(p.search(text) for p in _BOARD_CUES) else None
 
 
+# Component identification: hold a part up to the inspection camera and ask what
+# it is. Distinct from the board/circuit geometry - this is the recognition tier.
+# Checked most-specific first (resistor, markings) before the general catch.
+_ID_RESISTOR = [
+    re.compile(r"\bwhat\s+resistor\b"),
+    re.compile(r"\bread\s+(?:this|the)?\s*(?:resistor|colou?r\s*bands?|bands)\b"),
+    re.compile(r"\bwhat'?s?\s+this\s+resistor(?:'?s)?\s+value\b"),
+    re.compile(r"\bresistor('?s)?\s+value\b"),
+]
+_ID_MARKINGS = [
+    re.compile(r"\bread\s+(?:this|the)\s+(?:chip|markings?|part\s*(?:number|no)|label|numbers?)\b"),
+    re.compile(r"\bwhat'?s?\s+(?:printed|written)\s+on\b"),
+    re.compile(r"\bread\s+the\s+(?:part\s*number|markings?)\b"),
+]
+_ID_GENERAL = [
+    re.compile(r"^(?:what'?s|what\s+is|whats)\s+this(?:\s+(?:component|part|chip|thing|one))?$"),
+    re.compile(r"^identify\s+this(?:\s+(?:component|part|chip))?$"),
+    re.compile(r"^what\s+am\s+i\s+(?:holding|looking\s+at)$"),
+    re.compile(r"^what\s+(?:component|part|chip)\s+is\s+this$"),
+]
+
+
+def identify_mode(text):
+    """Return the identify mode for this sentence, or None if it isn't one."""
+    if any(p.search(text) for p in _ID_RESISTOR):
+        return "resistor"
+    if any(p.search(text) for p in _ID_MARKINGS):
+        return "markings"
+    if any(p.match(text) for p in _ID_GENERAL):
+        return "general"
+    return None
+
+
 # Circuit layouts: "wire up / hook up / build / show me how to connect ...".
 # bench-vision picks the circuit from the library and projects it on the holes.
 _CIRCUIT = re.compile(
@@ -176,6 +212,9 @@ def rule_decision(text, s):
         return {"intent": "calibrate"}
     if _CIRCUIT.search(text):
         return {"intent": "show_circuit", "query": text}
+    mode = identify_mode(text)
+    if mode:
+        return {"intent": "identify", "mode": mode}
     ref = board_ref(text)
     if ref:
         return {"intent": "highlight_board", "ref": ref}
@@ -203,6 +242,7 @@ def build_schema(s):
         "rows": {"type": "integer"},
         "query": {"type": "string"},
         "action": {"type": "string", "enum": ["next", "prev", "all"]},
+        "mode": {"type": "string", "enum": IDENTIFY_MODES},
         "surface": {"type": "string", "enum": list(s["surfaces"])},
     }
     if s["devices"]:
@@ -229,6 +269,10 @@ Reply with JSON only, using exactly one intent:
   use action: "next", "prev" or "all" with no query.
 - calibrate: re-run the projector calibration ("run calibration",
   "recalibrate", "calibrate the bench"). No fields.
+- identify: the user is holding a component up to the inspection camera and
+  wants it recognised. Fields: mode - "general" (name the part), "markings"
+  (read the printed text/part number off a chip), or "resistor" (read its
+  colour bands). This is about a part shown to the camera, NOT the breadboard.
 - ask_brain: anything else - questions, explanations, datasheets, pinouts,
   debugging help, or anything you are unsure about. Fields: text (the request, unchanged).
 
@@ -251,6 +295,9 @@ Examples:
 "light up column 12" -> {{"intent": "highlight_board", "ref": "light up column 12"}}
 "highlight the power rails" -> {{"intent": "highlight_board", "ref": "highlight the power rails"}}
 "place the ESP32 at column 10" -> {{"intent": "highlight_board", "ref": "place the ESP32 at column 10"}}
+"what's this component" -> {{"intent": "identify", "mode": "general"}}
+"read the markings on this chip" -> {{"intent": "identify", "mode": "markings"}}
+"what resistor is this" -> {{"intent": "identify", "mode": "resistor"}}
 "what's the pinout of an ESP32-S3" -> {{"intent": "ask_brain", "text": "what's the pinout of an ESP32-S3"}}
 "why is my LED so dim" -> {{"intent": "ask_brain", "text": "why is my LED so dim"}}"""
 
@@ -310,6 +357,10 @@ def clean(decision, original_text, s):
         return out
     elif intent == "calibrate":
         return out
+    elif intent == "identify":
+        mode = d.get("mode")
+        out["mode"] = mode if mode in IDENTIFY_MODES else "general"
+        return out
     elif intent == "show_grid":
         cols, rows = s["grid_default"]
         try:
@@ -365,6 +416,13 @@ def actions_for(decision, request_id, original_text, source, s):
         # bench-vision runs the calibration (projects markers, re-solves) and
         # replies when done. Give an immediate ack since it takes a few seconds.
         return [("lab/board/calibrate", {"id": request_id})], "Starting calibration - hold still."
+    if intent == "identify":
+        # the vision bridge wakes the 3090, grabs the inspection camera and asks
+        # the VLM; it replies on lab/brain/reply (spoken + optional headline), so
+        # give an immediate ack here since waking + inference takes a moment.
+        return ([("lab/vision/request",
+                  {"id": request_id, "mode": decision.get("mode", "general"), "camera": "inspect"})],
+                "Let me take a look.")
     # ask_brain
     return ([("lab/brain/request", {"id": request_id, "text": decision.get("text", original_text),
                                     "source": source})],

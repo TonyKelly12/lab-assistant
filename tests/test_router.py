@@ -132,6 +132,41 @@ def test_breadboard_grid_still_wins_over_board_cue():
     assert result["decision"]["intent"] == "show_grid"
 
 
+def test_identify_commands_route_to_the_vision_bridge():
+    router, sent, calls, _ = make_router()
+    cases = {
+        "Jarvis, what's this component?": "general",
+        "identify this part": "general",
+        "what am I holding": "general",
+        "read the markings on this chip": "markings",
+        "what's printed on this": "markings",
+        "read the part number": "markings",
+        "what resistor is this": "resistor",
+        "read the color bands": "resistor",
+        "what's this resistor's value": "resistor",
+    }
+    for text, mode in cases.items():
+        result = router.handle(text, "voice")
+        assert result["path"] == "rule", (text, result["path"])
+        assert result["decision"] == {"intent": "identify", "mode": mode}, (text, result["decision"])
+        assert ("lab/vision/request",
+                {"id": result["id"], "mode": mode, "camera": "inspect"}) in sent, text
+    # the router gives an immediate spoken ack (the bridge answers later, same id)
+    assert any(t == "lab/router/reply" and p["text"] == "Let me take a look." for t, p in sent)
+    assert calls == []  # rules handled it; the model was never asked
+
+
+def test_identify_mode_from_the_model_is_validated():
+    # a loose phrasing the rules miss; the model returns the intent + mode
+    router, sent, calls, _ = make_router({"intent": "identify", "mode": "markings"})
+    result = router.handle("can you figure out which chip I'm showing you", "voice")
+    assert result["path"] == "model"
+    assert result["decision"] == {"intent": "identify", "mode": "markings"}
+    # a bad/absent mode falls back to general, never crashes
+    router2, sent2, _, _ = make_router({"intent": "identify", "mode": "banana"})
+    assert router2.handle("what's this thingy", "voice")["decision"]["mode"] == "general"
+
+
 def test_settings_override():
     s = r.settings({"devices": {"heater": []}, "ollama": {"model": "llama3.2:3b"}})
     assert s["devices"] == {"heater": []}

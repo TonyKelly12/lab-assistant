@@ -39,7 +39,7 @@ echo ">> service user: $RUN_USER"
 case "$ROLE" in
   orin)    units=(lab-router oled-stats); [ $VOICE -eq 1 ] && units+=(voice-service);;
   shop)    units=(camera-node render-node shopvision); [ $VOICE -eq 1 ] && units+=(voice-satellite);;
-  homelab) units=(brain-bridge);;
+  homelab) units=(brain-bridge vision-bridge);;
   *) echo "unknown role: $ROLE (use orin|shop|homelab)"; exit 1;;
 esac
 [ $CONSOLE -eq 1 ] && units+=(lab-dashboard)
@@ -57,10 +57,15 @@ echo ">> installing units: ${units[*]}"
 for u in "${units[@]}"; do install_unit "$u"; done
 
 # env stubs (so you have a place for MQTT_PASS / DASHBOARD_KEY; never populated here)
-for f in lab-router shopvision render-node voice-service voice-satellite brain-bridge lab-dashboard; do
+for f in lab-router shopvision render-node voice-service voice-satellite brain-bridge vision-bridge lab-dashboard; do
   if printf '%s\n' "${units[@]}" | grep -qx "$f" && [ ! -f "/etc/default/$f" ]; then
     printf '# Set secrets here, e.g.\n# MQTT_PASS=change-me\n' > "/etc/default/$f"
     [ "$f" = "lab-dashboard" ] && printf '# DASHBOARD_KEY=change-me\n' >> "/etc/default/$f"
+    if [ "$f" = "vision-bridge" ]; then
+      printf '# VISION_CAMERA_URL=http://<shop-pi-ip>:8080\n# VISION_MODEL=qwen2.5vl:7b\n' >> "/etc/default/$f"
+      printf '# VISION_OLLAMA_URL=http://127.0.0.1:11434\n' >> "/etc/default/$f"
+      printf '# To wake the 3090 on demand: VISION_WAKE=1  VISION_WOL_MAC=aa:bb:cc:dd:ee:ff\n' >> "/etc/default/$f"
+    fi
     echo "   created /etc/default/$f (add secrets)"
   fi
 done

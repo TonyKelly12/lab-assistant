@@ -60,9 +60,23 @@ class UsbSource:
     frames are only decoded when someone asks for one.
     """
 
+    # Config `controls:` keys mapped to OpenCV V4L2 properties. Lets an
+    # arm-mounted inspection camera fix its focus (or force autofocus on) and
+    # zoom without code changes. Unknown keys are ignored.
+    _CONTROL_PROPS = {
+        "autofocus": cv2.CAP_PROP_AUTOFOCUS,
+        "focus": cv2.CAP_PROP_FOCUS,
+        "zoom": cv2.CAP_PROP_ZOOM,
+        "autoexposure": cv2.CAP_PROP_AUTO_EXPOSURE,
+        "exposure": cv2.CAP_PROP_EXPOSURE,
+        "brightness": cv2.CAP_PROP_BRIGHTNESS,
+        "gain": cv2.CAP_PROP_GAIN,
+    }
+
     def __init__(self, cfg):
         self.device = cfg.get("device", "/dev/video0")
         self.size = tuple(cfg.get("size", (1920, 1080)))
+        self.controls = dict(cfg.get("controls") or {})
         self.lock = threading.Lock()
         self.cap = None
         self._open()
@@ -75,12 +89,21 @@ class UsbSource:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.size[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.size[1])
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Apply focus/zoom/exposure controls. Set autofocus before focus, so a
+        # manual focus value isn't immediately overridden by the autofocus loop.
+        for key in ("autofocus", "autoexposure", "focus", "zoom",
+                    "exposure", "brightness", "gain"):
+            if key in self.controls:
+                prop = self._CONTROL_PROPS.get(key)
+                if prop is not None:
+                    cap.set(prop, float(self.controls[key]))
         if not cap.isOpened():
             log.warning("could not open %s; will retry", self.device)
         else:
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            log.info("USB camera %s opened at %dx%d", self.device, w, h)
+            log.info("USB camera %s opened at %dx%d%s", self.device, w, h,
+                     f" (controls: {', '.join(self.controls)})" if self.controls else "")
         self.cap = cap
 
     def _grab_loop(self):
