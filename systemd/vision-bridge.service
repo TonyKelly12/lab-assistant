@@ -1,0 +1,18 @@
+[Unit]
+Description=Lab assistant vision bridge (lab/vision/request -> 3090 VLM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# NODE: homelab (next to the 3090 / the vision model). Set the env file below:
+#   VISION_CAMERA_URL (the shop camera node), VISION_MODEL, LAB_MQTT_*,
+#   and the VISION_WOL_* vars if the 3090 should be woken on demand.
+User=mainbrain
+WorkingDirectory=/opt/lab-assistant
+EnvironmentFile=-/etc/default/vision-bridge
+ExecStart=/usr/bin/python3 homelab/vision_bridge.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

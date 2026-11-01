@@ -19,10 +19,11 @@ markers; voice and the homelab connection are next.
 | **Mooka BL-69 projector** | Mounted over the bench | Draws on the bench, 1920 × 1080 over HDMI from jackpot |
 | **OV5647 camera** (Pi ribbon camera) | Next to the projector | Overhead view of the bench: markers, motion, snapshots |
 | **TOMLOV microscope** | Bench | Close-up camera over USB (set up, off by default) |
-| **Jetson Orin Nano** (Yahboom CUBE case) | Office | Sub brain: message broker, local model, intent router, voice processing (planned) |
+| **LG 1080p webcam "inspect"** | Bench, on an arm | Inspection camera for component ID: hold a part up, the vision bridge grabs a frame |
+| **Jetson Orin Nano** (Yahboom CUBE case) | Office | Sub brain: message broker, local model, intent router, voice processing |
 | **Proxmox server** (RTX 3060 Ti) | Homelab | Main brain: larger language model, Qdrant knowledge base, Node-RED |
 | **Mac Mini** | Homelab | Runs Hermes Agent, which reaches the lab through an MCP gateway |
-| **Windows PC** (RTX 3090) | Homelab | Vision tier, woken by Wake-on-LAN only when needed |
+| **Windows PC** (RTX 3090) | Homelab | Vision / recognition tier: runs the vision-language model, woken by Wake-on-LAN only when needed |
 | **Jetson Nano** (original) | Spare | Reserved for bench vision or a robot project |
 
 The Orin stays out of the shop on purpose (dust), so anything that has to be
@@ -192,7 +193,8 @@ Turns one sentence into one action. It works in three tiers, cheapest first:
    up as `ask_brain`.
 
 Actions it can take today: `show_text`, `show_grid`, `clear_bench`,
-`set_device` (lights, exhaust, fan) and `ask_brain`.
+`set_device` (lights, exhaust, fan), `highlight_board`, `show_circuit`,
+`calibrate`, `identify` and `ask_brain`.
 
 **Everything is logged.** Each decision is written to `logs/router.jsonl` with
 the sentence, which tier handled it, the model's raw answer and how long it
@@ -209,6 +211,27 @@ The small OLED on the Orin's case rotates three pages: system (CPU, RAM, disk,
 IP), Jetson (GPU load, power mode, temperatures, fan) and lab services (MQTT,
 Ollama, voice, time since the last message). It dims overnight, shifts a pixel
 now and then against burn-in, and flashes a warning if the Orin runs hot.
+
+### Vision bridge (`homelab/vision_bridge.py`, by the 3090)
+
+The recognition tier. When you hold a part up to the **inspect** webcam and ask
+what it is, the router sends `lab/vision/request {id, mode, camera}`; the bridge
+wakes the 3090 (Wake-on-LAN) if it's asleep, pulls the frame from the shop
+camera node over HTTP, asks a vision-language model (Ollama with a vision model,
+`qwen2.5vl:7b`), and publishes the answer on `lab/brain/reply` — the same topic
+the router already speaks and draws, so no router change was needed for the
+reply.
+
+Three `mode`s: `general` (name the part), `markings` (read the printed text /
+part number off a chip) and `resistor` (read the colour bands). Resistor mode
+first runs a classical-CV band reader (`labassist/resistor.py`) and hands its
+guess to the model as a cross-check, because VLMs are reliable at printed text
+but shaky at counting colour bands.
+
+**This recognises a part it is *shown*.** It does not see parts on the
+breadboard, locate them, or check a build — that stays separate from the
+geometry side (`lab/board/*`), on purpose. Locating and verifying real parts is
+a later phase (a trained detector).
 
 ### Homelab tools (`homelab/`)
 
@@ -241,7 +264,8 @@ lives in the code.
 | `lab/router/reply` | router → voice, homelab | `{"id", "text", "intent"}` |
 | `lab/router/feedback` | you → router log | `{"id", "correct", "expected"}` |
 | `lab/brain/request` | router → main brain | `{"id", "text", "source"}` |
-| `lab/brain/reply` | main brain → router | `{"id", "text", "scene"?, "surface"?}` |
+| `lab/vision/request` | router → vision bridge | `{"id", "mode", "camera"}` (component ID) |
+| `lab/brain/reply` | main brain, vision bridge → router | `{"id", "text", "scene"?, "surface"?}` |
 | `lab/device/<name>/set` | router, homelab → Home Assistant / ESPHome | `{"state": "on" \| "off"}` |
 
 ---
@@ -287,11 +311,16 @@ pixels, so recalibrating never changes anyone's drawings.
 camera_node/   camera service (snapshots, markers, motion)
 render_node/   projector server + kiosk page
 calibration/   marker generation, lens and projector calibration
-labassist/     shared code: ArUco detection, homography maths, MQTT, config
-orin/          router.py (intent router), oled_stats.py (case screen)
-homelab/       lab_tools.py + mcp_server.py for Hermes
+labassist/     shared code: ArUco detection, homography maths, breadboard +
+               circuit geometry, resistor.py (colour-band reader), MQTT, config
+orin/          router.py (intent router), voice_service.py, oled_stats.py
+shopvision/    bench-vision: board finder, board-aware + circuit projection
+shop/          voice satellite (wake word + mic)
+homelab/       lab_tools.py + mcp_server.py for Hermes, brain_bridge.py,
+               vision_bridge.py (component ID on the 3090)
 config/        *.example.yaml (copy and edit; real configs are git-ignored)
-systemd/       services: camera-node, render-node, lab-router, oled-stats
+systemd/       services: camera-node, render-node, shopvision, voice-*,
+               lab-router, oled-stats, brain-bridge, vision-bridge
 tests/         offline tests with synthetic images and fake services
 docs/          this document
 ```
